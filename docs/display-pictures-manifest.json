@@ -1,0 +1,156 @@
+{
+  "source": "/Users/lucianoabreu/Downloads/wlm2009displaypic",
+  "description": "User-provided default display picture catalog; filenames and original bytes preserved.",
+  "assets": [
+    {
+      "file": "038243241b9f018c426fe0e6cca9558492794682.png",
+      "sha256": "93e9bb3bbcd60afbeee8eff9e8b722aca3c58cd4ff63a2b64977ceea3da31879",
+      "bytes": 11507
+    },
+    {
+      "file": "06be51335a9aa7141a3d086eee41103e28ed882e.png",
+      "sha256": "42602b47f723d5477223c090f489d04307ff5426b457b635bf231552385ece3e",
+      "bytes": 11945
+    },
+    {
+      "file": "0c5319e7147890e45265faad3b17701c1de71b12.png",
+      "sha256": "9859f9f6ad0b351fc02f7f8d2c6850d2349941a2d2e79269d404b84321812e9e",
+      "bytes": 8302
+    },
+    {
+      "file": "17759b7986d2f66aaf44930c955eccc5e95447bb.png",
+      "sha256": "11f5a29d1dbc3b691ee1b9fc95a2fd8bd8ab5ab851beef6817e2b28cf62cb31c",
+      "bytes": 9554
+    },
+    {
+      "file": "1d539656cd11e2d2d6de8eb573c6419dce54f4b4.png",
+      "sha256": "2a6b29bff5f49057b19bc58b3dec6f1e92da5e289e2719e85bcf1b1e8e09a296",
+      "bytes": 4791
+    },
+    {
+      "file": "1e75ad9e5d6c0d5cd06857012ad06dbc40e08698.png",
+      "sha256": "20f1c4e17ec39a67d43169de6b285cb6bb5853d4d3db18f9428df3a0fc906c66",
+      "bytes": 4895
+    },
+    {
+      "file": "246d355c48c095edff078045d2e05c3cb0a2ba79.png",
+      "sha256": "dbcbbddee08f5c3d0357aa7ca0aa1db5194bb54e91c8a9a8dee2f653325df55f",
+      "bytes": 20357
+    },
+    {
+      "file": "37edba888161bc32742923800fe27820fb4cb494.png",
+      "sha256": "2471efd7192416a40b52a98097b5410845edebf8d93b815f40fa1a1dd9a87237",
+      "bytes": 4853
+    },
+    {
+      "file": "3802323cc4b82330f3fae5b962f95f41727f75a1.gif",
+      "sha256": "b24dfe20f15dd2f47bfc28126f93b8f1aa85eddd82d0622176d414d67544eea0",
+      "bytes": 28152
+    },
+    {
+      "file": "407904c728357e21ad5eeaaace7253d8978412b0.png",
+      "sha256": "3a72089d1910b1aa446a849efdfa948a6ff59ad6393d27b0f336e4006f77149d",
+      "bytes": 23333
+    },
+    {
+      "file": "43a89e9f29f370efeb4337792d1c2f9859131b9d.gif",
+      "sha256": "13fc270f31c64e6db2679478917ac3be555a9a3b26a2360bd7b0fa62b0aeebb6",
+      "bytes": 14815
+    },
+    {
+      "file": "476ebd285ad9c335658199900b87262eef2a4d26.png",
+      "sha256": "1a5979382d11463f8da918af6c1984e0a6e9db8569a723289c4b28cfd629a449",
+      "bytes": 21251
+    },
+    {
+      "file": "674127b8913d0f9dd6c9566909b8730e2a6f0e3d.png",
+      "sha256": "326dc0e905e2f17b1cd3cd4db6437fbe1b7c53373eeec46a76a8ca629f925107",
+      "bytes": 8994
+    },
+    {
+      "file": "7199d1a605970f060e016e70ee032857e83e8a04.png",
+      "sha256": "51e14d6e4aabe6a5edeb6094c5bec73489197736ad3a7562ebb5180d2033d9f8",
+      "bytes": 13786
+    },
+    {
+      "file": "7ec594062152e8c95a4d2d3dce9ddb05f86ff599.png",
+      "sha256": "adeb2fadd31fd8fd0e8699f484ad0629105457cfbefe75f18d64496bb2832c3b",
+      "bytes": 15376
+    },
+    {
+      "file": "8a89d99b47064f7a680ae53834abe43b57e571ba.png",
+      "sha256": "7adec665b44f243be4b5922da18bd770de6994977604c9d5e8f14860a4b11c66",
+      "bytes": 19117
+    },
+    {
+      "file": "8cba00b0a2ae69c7cfa52768d4d93a5f032fe550.png",
+      "sha256": "c2fb46c099f99fff750d50599b3d65b1387eba69525cea8d2b59ea0721c1a457",
+      "bytes": 16343
+    },
+    {
+      "file": "91ea92412df33128d5b9831f297ccb4a9aad43d6.png",
+      "sha256": "6f2300636d612f30faf0619e3b0d753404a9657c5277a1f18f30b467a0be0e94",
+      "bytes": 21685
+    },
+    {
+      "file": "98aed26fa24289a735d6ad835083057b04e5ffa8.gif",
+      "sha256": "8a40741d592aa82fb836cd22a5edab45babc739ea73a7aa16d3be2131ba83465",
+      "bytes": 57148
+    },
+    {
+      "file": "9c2275d6e4ecce633aef2cecdeb25657624f4686.png",
+      "sha256": "e850b4d94619646e4481dc8493faa16eb1cf1f28977c7ac0648c30ca1af4b9f3",
+      "bytes": 18540
+    },
+    {
+      "file": "a62c267ed25d4d92aaa3ac8662f037aa11a2eb9e.png",
+      "sha256": "cce5a224c721ff2dae4b283932056bffabe693fe8cf3748bebf2c9d73bcdb597",
+      "bytes": 10697
+    },
+    {
+      "file": "b7b6de86480b7a49046bd2bab36cc3fc0d289d44.png",
+      "sha256": "fc4e2433a6afada4e5161f14496e73f0d847ee51617c451baa8701ed22c5ddc0",
+      "bytes": 18923
+    },
+    {
+      "file": "d0aa238aa0b6079f02e755b0b4e2841ff69f5acd.png",
+      "sha256": "250f187909f2419a52d905bb7532cdfd71c5e406c1c9733d2648a26b97323e16",
+      "bytes": 16658
+    },
+    {
+      "file": "d95c76f466559499af2d41f7558b5fd99c1f685e.png",
+      "sha256": "9e162c8e5c4efe7711f7ad286a1be40e0d381cbe2bb085af48499760e08d4477",
+      "bytes": 10665
+    },
+    {
+      "file": "d9f705fd527eb94a6a88281fb6709a8e3808530b.png",
+      "sha256": "4995ab76c63604b67c2cf1217db21057c49f707822841603f46966294e246231",
+      "bytes": 17419
+    },
+    {
+      "file": "db143dfda69295b178bfc1a81c59b2ba68e23b45.png",
+      "sha256": "f6c1bbd78b21f708af09739c4652c3b6a584b831081fa04cc0b9d2cabcdd7785",
+      "bytes": 9589
+    },
+    {
+      "file": "df013499bc523772de74eb5ae079461e35263ffe.gif",
+      "sha256": "33d2a55d471e931aa6b7bca9efc0d43b7521facaf6bc90f1cf8e30e16b116c1a",
+      "bytes": 16617
+    },
+    {
+      "file": "e253df720a257eef52315405cc1154f22f477e43.gif",
+      "sha256": "435056e64a675b621c0cf5f5c45d44b986021e4ac77bcf4e5bc092c7ce0389a3",
+      "bytes": 8927
+    },
+    {
+      "file": "ea77bbc5cb388319d19fee551d82edeed389e6e2.png",
+      "sha256": "b66d4b9ebe78c458179f04aac02ab3687838ee8d643c7a02913af217e6c524c2",
+      "bytes": 8096
+    },
+    {
+      "file": "ebf1fc9f10d39e9fa5b7d055c187a1ed7d94a148.png",
+      "sha256": "fa059cb240448bf8f58c71e25b16381231499213c70acb83e395383a898ab0f3",
+      "bytes": 12134
+    }
+  ]
+}

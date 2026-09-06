@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1920" height="1200" viewBox="0 0 1920 1200" preserveAspectRatio="xMidYMid slice">
+  <defs>
+    <linearGradient id="base" x1="0" y1="1" x2=".8" y2="0"><stop stop-color="#295626"/><stop offset=".42" stop-color="#048678"/><stop offset=".75" stop-color="#006d80"/><stop offset="1" stop-color="#02384f"/></linearGradient>
+    <radialGradient id="glow"><stop stop-color="#56cdb4" stop-opacity=".66"/><stop offset="1" stop-color="#43bba8" stop-opacity="0"/></radialGradient>
+    <linearGradient id="grass" x1="0" y1="1" x2=".25" y2="0"><stop stop-color="#c8e85b"/><stop offset=".45" stop-color="#88bc43"/><stop offset="1" stop-color="#40966a" stop-opacity="0"/></linearGradient>
+    <linearGradient id="ribbon" x1="0" y1=".8" x2="1" y2=".1"><stop stop-color="#f9ff75" stop-opacity=".85"/><stop offset=".48" stop-color="#b6ee7c" stop-opacity=".5"/><stop offset="1" stop-color="#44ceb0" stop-opacity="0"/></linearGradient>
+    <linearGradient id="beam"><stop stop-color="#c0fff5" stop-opacity="0"/><stop offset=".52" stop-color="#b0ffeb" stop-opacity=".22"/><stop offset=".66" stop-color="#5dcac6" stop-opacity=".08"/><stop offset="1" stop-color="#bafff2" stop-opacity="0"/></linearGradient>
+    <filter id="blur"><feGaussianBlur stdDeviation="28"/></filter>
+    <filter id="soft"><feGaussianBlur stdDeviation="7"/></filter>
+  </defs>
+  <path fill="url(#base)" d="M0 0h1920v1200H0z"/>
+  <ellipse cx="760" cy="430" rx="1100" ry="1000" fill="url(#glow)"/>
+  <g fill="url(#beam)" filter="url(#soft)">
+    <path d="M340-150h145L705 1080 550 850z"/>
+    <path d="M480-150h35L824 1200 763 1200z"/>
+    <path d="M1030-150h165L945 1040 847 1110z"/>
+    <path d="M1510-150h95L1068 1200 1000 1200z"/>
+  </g>
+  <path d="M-150 920C415 650 754 870 1210 852s640-125 865-280v750H-150Z" fill="url(#grass)" filter="url(#blur)"/>
+  <path d="M-80 795C446 1002 1000 738 2020 1070L2020 1230C1027 855 450 1002-80 850Z" fill="url(#ribbon)" filter="url(#soft)"/>
+  <path d="M-100 858C541 1010 1040 787 2025 1122" fill="none" stroke="#f0ffb8" stroke-opacity=".7" stroke-width="3"/>
+  <path d="M-80 874C575 1050 992 851 2020 1160" fill="none" stroke="#e5ff8a" stroke-opacity=".3" stroke-width="11" filter="url(#soft)"/>
+  <path d="M-150 1090C484 679 960 844 2070 958" fill="none" stroke="#56dfb6" stroke-opacity=".22" stroke-width="2"/>
+</svg>
