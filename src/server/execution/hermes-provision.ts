@@ -43,7 +43,7 @@ export async function provisionHermes(
   try {
     await machine.run(`test "$(git -C /opt/blm-hermes rev-parse HEAD)" = '${HERMES_REVISION}'`);
     await machine.write('/opt/blm-hermes-state/config.yaml', [
-      'model:', '  provider: openai', '  api_mode: chat_completions', '  streaming: false',
+      'model:', '  provider: openai-api', '  api_mode: chat_completions', '  streaming: false',
       'agent:', '  max_turns: 8', '  run_budget_seconds: 80',
       'platform_toolsets:', '  api_server: [terminal, file]',
       'terminal:', '  backend: local', '  cwd: /workspace/shared', '',

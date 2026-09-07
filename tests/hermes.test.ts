@@ -22,7 +22,7 @@ test('all bots use the account endpoint with separate stable sessions', async ()
   assert.equal(requests[0].url, requests[1].url);
   assert.notEqual(requests[0].body.session_id, requests[1].body.session_id);
   assert.equal(requests[0].headers.get('Idempotency-Key'), runId);
-  assert.equal(requests[0].body.provider, 'openai');
+  assert.equal(requests[0].body.provider, 'openai-api');
   assert.equal(hermesSession(ownerId, botId), requests[0].body.session_id);
 });
 
