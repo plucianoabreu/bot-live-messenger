@@ -4,7 +4,7 @@ import { workerDatabase } from '../server/execution/database';
 import { executeChat, type ChatMessage } from '../server/execution/chat';
 import { createOpenAIProvider } from '../server/execution/openai';
 import { loadChatMemoryContextWhenEnabled } from '../server/execution/memory-context';
-import { executeHermes } from '../server/execution/hermes-executor';
+import { executeHermes, hermesExecutionMayContinue } from '../server/execution/hermes-executor';
 
 export const chatTask=task({
  id:'bot-messenger-chat',maxDuration:120,retry:{maxAttempts:1},
@@ -23,8 +23,12 @@ export const chatTask=task({
   const timeout=setTimeout(()=>controller.abort(),100000);
   const interval=setInterval(async()=>{
    try{
-    const {data,error}=await db.from('runs').select('state,cancel_requested,execution_version').eq('id',runId).single();
-    if(error || !data || data.cancel_requested || data.state!=='RUNNING' || data.execution_version!==r.version)controller.abort();
+    const [runState,runtimeState]=await Promise.all([
+     db.from('runs').select('state,cancel_requested,execution_version').eq('id',runId).single(),
+     db.from('runtime_config').select('runs_enabled').eq('singleton',true).single(),
+    ]);
+    if(runState.error || runtimeState.error ||
+      !hermesExecutionMayContinue(runState.data,runtimeState.data?.runs_enabled===true,r.version))controller.abort();
    }catch{controller.abort();}
   },2000);
   try{

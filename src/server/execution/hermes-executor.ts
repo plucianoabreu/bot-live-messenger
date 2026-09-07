@@ -3,11 +3,55 @@ import { Sandbox } from '@e2b/desktop';
 import { setTimeout as delay } from 'node:timers/promises';
 import { workerDatabase } from './database';
 import { HermesClient } from './hermes';
-import { HermesE2BFactory } from './hermes-e2b';
+import { connectHermesE2B, HermesE2BFactory, hermesRuntimeNetworkPolicy } from './hermes-e2b';
 import { provisionHermes } from './hermes-provision';
 import { exportHermesArtifact } from '../computer/hermes-artifacts';
 import { databaseHermesArtifactAuthorizer, databaseHermesArtifactRepository, privateArtifactStore } from '../computer/database';
 import { defaultWorkspacePolicy } from '../computer/policy';
+
+const TERMINAL_HERMES_STATES = new Set(['completed', 'failed', 'cancelled']);
+
+export function hermesExecutionMayContinue(
+  run: { state?: string; cancel_requested?: boolean; execution_version?: number } | null,
+  runtimeEnabled: boolean,
+  version: number,
+) {
+  return runtimeEnabled && run?.state === 'RUNNING' && !run.cancel_requested && run.execution_version === version;
+}
+
+export async function quiesceHermesRuntime(input: {
+  client?: Pick<HermesClient, 'stop' | 'read'>;
+  remoteRunId?: string;
+  alreadyTerminal: boolean;
+  maxPolls?: number;
+  wait?: () => Promise<void>;
+  pause(): Promise<void>;
+  release(): Promise<void>;
+}) {
+  if (!input.alreadyTerminal && input.remoteRunId) {
+    if (!input.client) throw new Error('HERMES_STOP_UNCONFIRMED');
+    try {
+      await input.client.stop(input.remoteRunId, AbortSignal.timeout(5_000));
+    } catch {
+      throw new Error('HERMES_STOP_UNCONFIRMED');
+    }
+    const maxPolls = input.maxPolls ?? 10;
+    let stopped = false;
+    for (let attempt = 0; attempt < maxPolls; attempt += 1) {
+      let state;
+      try {
+        state = await input.client.read(input.remoteRunId, AbortSignal.timeout(3_000));
+      } catch {
+        throw new Error('HERMES_STOP_UNCONFIRMED');
+      }
+      if (TERMINAL_HERMES_STATES.has(state.status)) { stopped = true; break; }
+      if (attempt + 1 < maxPolls) await (input.wait ?? (() => delay(1_000)))();
+    }
+    if (!stopped) throw new Error('HERMES_STOP_UNCONFIRMED');
+  }
+  await input.pause();
+  await input.release();
+}
 
 export async function executeHermes(input: {
   runId: string; version: number; ownerId: string; botId: string;
@@ -18,6 +62,11 @@ export async function executeHermes(input: {
   const template = process.env.HERMES_TEMPLATE_ID;
   const gateway = process.env.HERMES_MODEL_GATEWAY_URL;
   if (!key || !template || !gateway) throw new Error('HERMES_NOT_CONFIGURED');
+  const networkPolicy = hermesRuntimeNetworkPolicy(
+    gateway,
+    process.env.E2B_NETWORK_POLICY_VERSION,
+    process.env.E2B_ALLOWED_HOSTS,
+  );
   const db = workerDatabase();
   const token = randomBytes(32).toString('hex');
   const { data: binding, error } = await db.rpc('claim_hermes_workspace', {
@@ -31,7 +80,11 @@ export async function executeHermes(input: {
   let terminal = false;
   try {
     if (!machineId) {
-      const created = await provisionHermes(new HermesE2BFactory(key, template), input.ownerId, { url: gateway, scopedToken: token });
+      const created = await provisionHermes(
+        new HermesE2BFactory(key, template, 120_000, networkPolicy),
+        input.ownerId,
+        { url: gateway, scopedToken: token },
+      );
       machineId = created.machineId;
       const { error: saveError } = await db.from('hermes_workspaces').update({
         machine_id: machineId, base_url: created.baseUrl, api_key: created.apiKey, revision: created.revision,
@@ -39,12 +92,17 @@ export async function executeHermes(input: {
       if (saveError) throw new Error('HERMES_BINDING_SAVE_FAILED');
       client = new HermesClient(created);
     } else {
-      const sandbox = await Sandbox.connect(machineId, { apiKey: key, timeoutMs: 120_000 });
-      await sandbox.commands.run('python3 /opt/blm-hermes-launch.py > /opt/blm-hermes-state/gateway.log 2>&1', {
+      const sandbox = await connectHermesE2B(key, machineId, networkPolicy);
+      await sandbox.commands.run('umask 077 && python3 /opt/blm-hermes-launch.py > /opt/blm-hermes-state/gateway.log 2>&1', {
         user: 'root', background: true, timeoutMs: 0,
       });
       await sandbox.commands.run('python3 /opt/blm-hermes-ready.py', { user: 'root', timeoutMs: 50_000 });
-      client = new HermesClient({ ownerId: input.ownerId, baseUrl: binding.base_url, apiKey: binding.api_key });
+      client = new HermesClient({
+        ownerId: input.ownerId,
+        baseUrl: binding.base_url,
+        apiKey: binding.api_key,
+        trafficAccessToken: sandbox.trafficAccessToken!,
+      });
     }
     const started = await client.start(input, input.signal);
     remote = started.runId;
@@ -80,19 +138,20 @@ export async function executeHermes(input: {
       await delay(1000, undefined, { signal: input.signal });
     }
   } finally {
-    if (!terminal && remote && client) {
-      try { await client.stop(remote, AbortSignal.timeout(5000)); } catch { /* Retain the fence. */ }
-    }
     if (machineId) {
-      // Pause must succeed before another bot may acquire this computer.
-      await Sandbox.pause(machineId, { apiKey: key, keepMemory: false });
-    }
-    // A filesystem-only pause discards every process, including unfinished tools.
-    // The next run boots a fresh gateway while retaining files and session storage.
-    if (machineId) {
-      const { error: releaseError } = await db.from('hermes_workspaces').update({ active_run: null, remote_run: null })
-        .eq('user_id', input.ownerId).eq('active_run', input.runId);
-      if (releaseError) throw new Error('HERMES_RELEASE_FAILED');
+      await quiesceHermesRuntime({
+        client, remoteRunId: remote, alreadyTerminal: terminal,
+        async pause() {
+          // A filesystem-only pause discards the stopped gateway process while
+          // preserving user files and session storage.
+          await Sandbox.pause(machineId!, { apiKey: key, keepMemory: false });
+        },
+        async release() {
+          const { error: releaseError } = await db.from('hermes_workspaces').update({ active_run: null, remote_run: null })
+            .eq('user_id', input.ownerId).eq('active_run', input.runId);
+          if (releaseError) throw new Error('HERMES_RELEASE_FAILED');
+        },
+      });
     }
   }
 }

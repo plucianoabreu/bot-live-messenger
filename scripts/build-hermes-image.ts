@@ -7,7 +7,14 @@ import { installHermesImage, HERMES_REVISION } from '../src/server/execution/her
 async function main() {
   const apiKey = process.env.E2B_API_KEY;
   if (!apiKey) throw new Error('E2B_API_KEY_MISSING');
-  const machine = await new HermesE2BFactory(apiKey, 'desktop', 600_000).create(randomUUID());
+  const machine = await new HermesE2BFactory(apiKey, 'desktop', 600_000, {
+    version: 'hermes-image-build-v1',
+    allowedHosts: [
+      'archive.ubuntu.com', 'security.ubuntu.com',
+      'github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com',
+      'pypi.org', 'files.pythonhosted.org',
+    ],
+  }).create(randomUUID());
   try {
     await installHermesImage(machine);
     await machine.run('/opt/blm-hermes/.venv/bin/python -c "import aiohttp; import gateway.platforms.api_server"');

@@ -6,7 +6,12 @@ const ownerId = '11111111-1111-4111-8111-111111111111';
 const botId = '22222222-2222-4222-8222-222222222222';
 const other = '33333333-3333-4333-8333-333333333333';
 const runId = '44444444-4444-4444-8444-444444444444';
-const workspace = { ownerId, baseUrl: 'https://account-runtime.example', apiKey: 'test-only' };
+const workspace = {
+  ownerId,
+  baseUrl: 'https://account-runtime.example',
+  apiKey: 'test-only',
+  trafficAccessToken: 'e2b-traffic-token',
+};
 const input = { ownerId, botId, runId, model: 'test-model', instructions: 'Research', message: 'Hello' };
 const signal = () => new AbortController().signal;
 
@@ -22,6 +27,7 @@ test('all bots use the account endpoint with separate stable sessions', async ()
   assert.equal(requests[0].url, requests[1].url);
   assert.notEqual(requests[0].body.session_id, requests[1].body.session_id);
   assert.equal(requests[0].headers.get('Idempotency-Key'), runId);
+  assert.equal(requests[0].headers.get('E2B-Traffic-Access-Token'), workspace.trafficAccessToken);
   assert.equal(requests[0].body.provider, 'openai-api');
   assert.equal(hermesSession(ownerId, botId), requests[0].body.session_id);
 });
@@ -35,6 +41,7 @@ test('foreign account cannot start work on an existing workspace', async () => {
 
 test('unsafe endpoint and injected run paths are rejected', async () => {
   assert.throws(() => new HermesClient({ ...workspace, baseUrl: 'http://example.com' }), /ENDPOINT_INVALID/);
+  assert.throws(() => new HermesClient({ ...workspace, trafficAccessToken: '' }), /TRAFFIC_CREDENTIAL_INVALID/);
   const client = new HermesClient(workspace);
   await assert.rejects(client.read('../sessions', signal()));
 });
