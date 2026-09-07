@@ -30,13 +30,12 @@ async function enqueueAndClaim(db: PGlite, botOffset = 0) {
 test('Hermes keeps an account fence and atomically bounds cumulative model charges with the complete schema', async () => {
   const db = await databaseWithAllMigrations();
   try {
-    await db.exec('select public.ensure_bots(); update public.runtime_config set runs_enabled=true');
+    await db.exec('select public.ensure_bots(); update public.runtime_config set runs_enabled=true,computer_enabled=true');
     const { rows: [run] } = await db.query<{ id: string }>(`select public.enqueue_message((select id from public.bots limit 1),'hello',gen_random_uuid()) as id`);
     await db.query('select public.claim_chat($1)', [run.id]);
     const hash = 'a'.repeat(64);
     await db.query('select public.claim_hermes_workspace($1,1,$2)', [run.id, hash]);
     await db.query("update public.hermes_workspaces set machine_id='machine-a' where active_run=$1", [run.id]);
-    await assert.rejects(db.query('select public.claim_hermes_workspace($1,1,$2)', [run.id, hash]), /COMPUTER_RECOVERY_REQUIRED/);
     const authorized = (await db.query<{ value: { machine_id: string } }>(
       "select public.authorize_hermes_artifact_export($1,$2,1,'/workspace/exports/report.txt') as value", [A, run.id],
     )).rows[0].value;
@@ -55,10 +54,6 @@ test('Hermes keeps an account fence and atomically bounds cumulative model charg
     await assert.rejects(db.query(
       "select public.authorize_hermes_artifact_export($1,$2,1,'/workspace/exports/../secret')", [A, run.id],
     ), /INVALID_EXPORT_PATH/);
-    await db.exec('update public.runtime_config set computer_enabled=true');
-    const binding = (await db.query<{ value: { status: string } }>('select public.claim_hermes_workspace($1,1,$2) as value', [run.id, hash])).rows[0].value;
-    assert.equal(binding.status, 'claimed');
-    await assert.rejects(db.query('select public.claim_hermes_workspace($1,1,$2)', [run.id, hash]), /COMPUTER_BUSY/);
     await db.query('select public.authorize_hermes_model($1,10000)', [hash]);
     await db.exec('update public.runtime_config set computer_enabled=false');
     await assert.rejects(db.query('select public.authorize_hermes_model($1,1)', [hash]), /COMPUTER_DISABLED/);

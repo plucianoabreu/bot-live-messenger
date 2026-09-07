@@ -11,7 +11,10 @@ export type HermesNetworkPolicy = {
 type E2BSandbox = {
   sandboxId: string;
   trafficAccessToken?: string;
-  files: { write(path: string, contents: string, options: { user: string }): Promise<unknown> };
+  files: {
+    read(path: string, options?: { user?: string }): Promise<string>;
+    write(path: string, contents: string, options: { user: string }): Promise<unknown>;
+  };
   commands: { run(command: string, options: Record<string, unknown>): Promise<{
     exitCode: number; stdout?: string; stderr?: string;
   }> };
