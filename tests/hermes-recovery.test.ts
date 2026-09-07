@@ -32,6 +32,23 @@ test('failed provider pause cannot release the durable Hermes fence', async () =
   assert.equal(completed, false);
 });
 
+test('incomplete provisioning recovery destroys the provider before clearing the binding', async () => {
+  const events: string[] = [];
+  await completeHermesRecoveryAfterPause({
+    ownerId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+    activeRunId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+    activeExecutionVersion: 3,
+    machineId: 'machine-partial',
+    recoveryToken: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc',
+    recoveryAction: 'destroy',
+  }, {
+    async pause() { assert.fail('partial machines must never be reused'); },
+    async destroy(machineId) { events.push(`destroy:${machineId}`); },
+    async complete() { events.push('complete'); return true; },
+  });
+  assert.deepEqual(events, ['destroy:machine-partial', 'complete']);
+});
+
 test('resuming a machine replaces only its scoped gateway token', async () => {
   const previousToken = 'a'.repeat(64);
   const nextToken = 'b'.repeat(64);
@@ -40,6 +57,7 @@ test('resuming a machine replaces only its scoped gateway token', async () => {
     HERMES_HOME: '/opt/blm-hermes-state', API_SERVER_KEY: 'c'.repeat(64), API_SERVER_ENABLED: 'true',
     API_SERVER_HOST: '0.0.0.0', API_SERVER_PORT: '8642', OPENAI_BASE_URL: 'https://gateway.example/v1',
     OPENAI_API_KEY: previousToken, TERMINAL_CWD: '/workspace/shared',
+    HERMES_WRITE_SAFE_ROOT: '/workspace', HOME: '/workspace',
   };
   const files = {
     async read() { return JSON.stringify(configuration); },

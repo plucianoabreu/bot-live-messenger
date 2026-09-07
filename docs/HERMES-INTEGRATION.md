@@ -18,6 +18,12 @@ cancellation, lease expiry, both runtime flags and cumulative cost reservation.
 The server controls model, output limit and allowed request fields. Unknown
 outcomes retain their reservations.
 
+Production also requires an operator-verified versioned rate card and exact E2B
+resource shape. Before provider work, the executor proves that the configured
+120-second compute worst case fits the reserved ceiling. Every claimed execution
+then writes one idempotent settlement with observed model tokens and active
+duration. Missing usage retains the full reservation and never creates a refund.
+
 ## Runtime boundaries
 
 - Pinned revision: `233757037df1f03f9fe1cfddc097acd5ad7f7510`.
@@ -31,11 +37,10 @@ outcomes retain their reservations.
 - Different accounts execute independently; bots in one account take turns.
 - Unexpected worker death retains the fence. A later worker may clear it only
   after the provider confirms the persisted machine is paused and the database
-  accepts the exact recovery token, run and execution version. Lease expiry alone
-  never releases or transfers the fence; an ambiguous recovery remains visible in
-  operator diagnostics.
-- Live screen streaming, vision, attachment delivery and automatic recovery of
-  a recovery attempt with an unknown pause outcome are not implemented by this adapter.
+  accepts the exact recovery token, run and execution version. The production
+  maintenance schedule reclaims an abandoned recovery token after five minutes;
+  lease expiry alone never releases or transfers the fence.
+- Live screen streaming and vision are outside this adapter.
 
 ## Artifact delivery and deletion
 
@@ -46,13 +51,19 @@ copy the bytes to the private artifact bucket. Delivery metadata includes the
 run, filename, MIME type, byte size and SHA-256 checksum; the database announces
 the artifact only after Storage upload and a second current-fence check.
 
-The reusable export seam is implemented in `src/server/computer/hermes-artifacts.ts`.
-The Hermes executor still needs to call it before clearing `active_run`; this
-change does not claim attachment delivery is enabled in hosted execution.
+The executor calls the reusable delivery seam in
+`src/server/computer/hermes-artifacts.ts` before clearing `active_run` when
+`HERMES_EXPORT_PATH` is configured on Trigger. The configured value is a relative
+path below `/workspace/exports`. A root-owned helper traverses every path component
+without following symlinks and copies a stable, bounded snapshot into a root-only
+staging file before the worker reads it.
 
-Account cleanup now inventories both provider-neutral computers and
-`hermes_workspaces`, destroys every distinct machine before Auth deletion, and
-uses cascading foreign keys only after the tracked destruction receipt exists.
+Account cleanup inventories both provider-neutral computers and
+`hermes_workspaces`, stores a destruction receipt for each provider ID, and deletes
+Auth only after all receipts and storage cleanup stages are durable. A Trigger
+Production schedule runs one bounded attempt for account, artifact-intent and
+watch-frame cleanup plus Hermes recovery every five minutes; one failing lane
+does not skip the others.
 
 ## Provisioning
 
@@ -61,10 +72,16 @@ The script creates a credential-free snapshot, writes its reference to the ignor
 `.local-setup/hermes-image.json` and removes the build machine.
 
 Set `HERMES_ENABLED`, `HERMES_TEMPLATE_ID`, `HERMES_MODEL_GATEWAY_URL`,
-`E2B_NETWORK_POLICY_VERSION` and `E2B_ALLOWED_HOSTS` on Trigger. The destination
+`HERMES_RATE_CARD_ID`, `E2B_VCPU_COUNT`, `E2B_MEMORY_MIB`, both
+`E2B_COMPUTE_MICROS_PER_*` rates, `E2B_NETWORK_POLICY_VERSION` and
+`E2B_ALLOWED_HOSTS` on Trigger. The destination
 list accepts exact DNS hostnames only: no IP literals, local names or wildcards.
 It must include the hostname from `HERMES_MODEL_GATEWAY_URL`. Missing, malformed
 or unverifiable policy state stops execution before compute is claimed.
+
+Set the account-cleanup flags and bucket variables on Trigger Production, not
+only on Vercel. The cleanup task needs the service-role and E2B credentials in the
+worker environment to remove private objects and destroy account machines.
 
 Rebuild the Hermes snapshot before enabling this revision. A snapshot made by the
 previous adapter ran Hermes as root and exposed the terminal tool. Existing
@@ -75,8 +92,8 @@ machines is a separate operator-authorized cleanup action.
 Vercel needs `HERMES_ENABLED=true`, the existing database service credential,
 OpenAI key and model rates. Set `TRIGGER_PRODUCTION_SECRET_KEY` in Vercel Production
 to switch the dispatcher without replacing the existing dev/preview key.
-Apply every migration in filename order, including `hermes_runtime` and
-`hermes_security_recovery`, before activating the worker.
+Apply every migration in filename order, including the Hermes lifecycle and
+usage-settlement migrations, before activating the worker.
 
 ## Local verification and required E2B proof
 

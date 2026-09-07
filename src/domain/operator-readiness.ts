@@ -22,6 +22,8 @@ export function runtimeConfigurationReadiness(env: NodeJS.ProcessEnv = process.e
   const groups = {
     identity: ['NEXT_PUBLIC_SUPABASE_URL', 'NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY', 'APP_URL'],
     chat: ['SUPABASE_SERVICE_ROLE_KEY', 'TRIGGER_SECRET_KEY', 'OPENAI_API_KEY', 'OPENAI_MODEL', 'OPENAI_INPUT_MICROS_PER_TOKEN', 'OPENAI_OUTPUT_MICROS_PER_TOKEN'],
+    hermes: ['HERMES_TEMPLATE_ID', 'HERMES_MODEL_GATEWAY_URL', 'HERMES_RATE_CARD_ID', 'E2B_VCPU_COUNT', 'E2B_MEMORY_MIB',
+      'E2B_COMPUTE_MICROS_PER_VCPU_SECOND', 'E2B_COMPUTE_MICROS_PER_GIB_SECOND'],
     computer: ['E2B_API_KEY', 'E2B_TEMPLATE_ID', 'E2B_TEMPLATE_VERSION', 'E2B_NETWORK_POLICY_VERSION', 'E2B_ALLOWED_HOSTS', 'ARTIFACT_BUCKET', 'WATCH_FRAME_BUCKET'],
   } as const;
   const missing = Object.fromEntries(Object.entries(groups).map(([group, keys]) => [group, keys.filter(key => !env[key]?.trim())]));

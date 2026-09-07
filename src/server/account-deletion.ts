@@ -86,6 +86,7 @@ export type AccountCleanupDependencies = {
   claim(): Promise<AccountCleanupClaim | null>;
   renew(claimToken: string): Promise<boolean>;
   recordStage(claimToken: string, stage: AccountCleanupStage): Promise<boolean>;
+  recordComputerReceipt(claimToken: string, providerId: string): Promise<boolean>;
   removeArtifacts(paths: string[]): Promise<void>;
   removeWatchFrames(paths: string[]): Promise<void>;
   destroyComputer(providerId: string): Promise<void>;
@@ -135,7 +136,12 @@ export async function processOneAccountDeletion(dependencies: AccountCleanupDepe
       if (claim.watch_paths.length > 0) await dependencies.removeWatchFrames(claim.watch_paths);
     });
     await runStage(claim.computer_destroyed, 'COMPUTER_CLEANUP_FAILED', 'COMPUTER_DESTROYED', async () => {
-      for (const providerId of providerIds) await dependencies.destroyComputer(providerId);
+      for (const providerId of providerIds) {
+        await dependencies.destroyComputer(providerId);
+        if (!await dependencies.recordComputerReceipt(claim.claim_token, providerId)) {
+          throw new Error('STALE_CLEANUP_LEASE');
+        }
+      }
     });
     await runStage(claim.auth_deleted, 'AUTH_DELETE_FAILED', 'AUTH_DELETED', () => dependencies.deleteAuthUser(claim.user_id));
     stage = 'FINALIZATION_FAILED';
@@ -171,6 +177,14 @@ export function supabaseAccountCleanupDependencies(
     recordStage: async (claimToken, stage) => {
       const result = await db.rpc('record_account_deletion_stage', { p_claim_token: claimToken, p_stage: stage });
       if (result.error) throw new Error('ACCOUNT_CLEANUP_STAGE_FAILED');
+      return result.data === true;
+    },
+    recordComputerReceipt: async (claimToken, providerId) => {
+      const result = await db.rpc('record_account_deletion_computer_receipt', {
+        p_claim_token: claimToken,
+        p_provider_id: providerId,
+      });
+      if (result.error) throw new Error('ACCOUNT_CLEANUP_RECEIPT_FAILED');
       return result.data === true;
     },
     removeArtifacts: async paths => {

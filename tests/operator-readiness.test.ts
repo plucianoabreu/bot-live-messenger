@@ -14,6 +14,7 @@ test('operator readiness reports missing keys and flags without exposing configu
   assert.equal(report.requestedFlags.memoryEnabled, false);
   assert.equal(report.requestedFlags.cleanupEnabled, false);
   assert.equal(report.configuration.accountCleanup.ready, false);
+  assert.ok(report.configuration.missing.hermes.includes('HERMES_RATE_CARD_ID'));
 });
 
 test('operator diagnostics expose bounded identifiers and aggregate counts only', () => {

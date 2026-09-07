@@ -111,7 +111,7 @@ test('provisioning exposes only file tools and drops runtime privileges before e
   await installHermesImage(machine);
   await provisionHermes({ async create() { return machine; } }, ownerId, {
     url: 'https://gateway.example.com/api/hermes/v1/chat/completions',
-    scopedToken: 'scoped-model-token',
+    scopedToken: 'b'.repeat(64),
   });
 
   const allCommands = commands.join('\n');
@@ -129,6 +129,8 @@ test('provisioning exposes only file tools and drops runtime privileges before e
   assert.match(allCommands, /test ! -w \/opt\/blm-python/);
   assert.ok(writes.has('/opt/blm-hermes-secrets/launch.json'));
   assert.ok(!writes.has('/opt/blm-hermes-state/launch.json'));
+  assert.match(writes.get('/opt/blm-hermes-export.py') ?? '', /O_NOFOLLOW/);
+  assert.match(allCommands, /chmod 700 \/opt\/blm-hermes-export\.py/);
   assert.match(writes.get('/opt/blm-hermes-state/config.yaml') ?? '', /api_server: \[file\]/);
   assert.doesNotMatch(writes.get('/opt/blm-hermes-state/config.yaml') ?? '', /terminal/);
   const launcher = writes.get('/opt/blm-hermes-launch.py') ?? '';
@@ -141,11 +143,11 @@ test('provisioning exposes only file tools and drops runtime privileges before e
   const readiness = writes.get('/opt/blm-hermes-ready.py') ?? '';
   assert.match(readiness, /\/v1\/toolsets/);
   assert.match(readiness, /enabled != \{"file"\}/);
-  assert.deepEqual(starts, ['umask 077 && python3 /opt/blm-hermes-launch.py > /opt/blm-hermes-state/gateway.log 2>&1']);
+  assert.deepEqual(starts, ['umask 077 && python3 /opt/blm-hermes-launch.py > /opt/blm-hermes-secrets/gateway.log 2>&1']);
 });
 
 test('provisioning failure exposes a safe stage and separately sanitized gateway diagnostic', async () => {
-  const secret = 'super-secret-model-token-1234567890';
+  const secret = 'a'.repeat(64);
   let destroyed = false;
   const machine: HermesMachine = {
     id: 'sandbox-id', trafficAccessToken: 'traffic-token',
@@ -169,6 +171,8 @@ test('provisioning failure exposes a safe stage and separately sanitized gateway
       assert.ok(error instanceof HermesProvisionError);
       assert.equal(error.message, 'HERMES_PROVISION_FAILED:readiness');
       assert.equal(error.stage, 'readiness');
+      assert.equal(error.machineId, 'sandbox-id');
+      assert.equal(error.cleanupConfirmed, true);
       assert.match(error.diagnostic ?? '', /RuntimeError: invalid config/);
       assert.doesNotMatch(error.diagnostic ?? '', new RegExp(secret));
       assert.match(error.diagnostic ?? '', /\[REDACTED\]/);
@@ -176,6 +180,29 @@ test('provisioning failure exposes a safe stage and separately sanitized gateway
     },
   );
   assert.equal(destroyed, true);
+});
+
+test('provisioning cleanup failure preserves the machine identity for recovery', async () => {
+  const machine: HermesMachine = {
+    id: 'machine-recovery-required', trafficAccessToken: 'traffic-token',
+    async write() {},
+    async run() { throw new Error('HERMES_MACHINE_COMMAND_FAILED'); },
+    async start() {},
+    endpoint() { return 'https://8642-sandbox-id.e2b.app'; },
+    async destroy() { throw new Error('provider unavailable'); },
+  };
+  await assert.rejects(
+    provisionHermes({ async create() { return machine; } }, ownerId, {
+      url: 'https://gateway.example.com/v1', scopedToken: 'c'.repeat(64),
+    }),
+    error => {
+      assert.ok(error instanceof HermesProvisionError);
+      assert.equal(error.stage, 'revision');
+      assert.equal(error.machineId, 'machine-recovery-required');
+      assert.equal(error.cleanupConfirmed, false);
+      return true;
+    },
+  );
 });
 
 test('gateway diagnostic sanitizer strips credentials and control characters and bounds output', () => {
@@ -204,11 +231,38 @@ test('runtime sandbox rejects provider success without a private ingress token',
     const factory = new HermesE2BFactory('api-key', 'template', 120_000, {
       version: 'runtime-v1', allowedHosts: ['gateway.example.com'],
     });
-    await assert.rejects(factory.create(ownerId), /E2B_TRAFFIC_TOKEN_MISSING/);
+    await assert.rejects(factory.create(ownerId), (error: unknown) => {
+      assert.ok(error instanceof HermesProvisionError);
+      assert.equal(error.stage, 'network');
+      assert.equal(error.machineId, 'sandbox-id');
+      assert.equal(error.cleanupConfirmed, true);
+      return true;
+    });
     assert.equal(killed, true);
   } finally {
     Object.defineProperty(Sandbox, 'create', { configurable: true, value: originalCreate });
   }
+});
+
+test('network verification cleanup failure preserves the sandbox id for recovery', async () => {
+  const sandbox = {
+    sandboxId: 'sandbox-orphan', trafficAccessToken: undefined,
+    files: { write: async () => undefined }, commands: { run: async () => ({ exitCode: 0 }) },
+    getHost: () => '8642-sandbox-orphan.e2b.app',
+    getInfo: async () => ({ network: { allowOut: ['gateway.example.com'], denyOut: ['0.0.0.0/0'], allowPublicTraffic: false } }),
+    async kill() { throw new Error('provider timeout'); },
+  };
+  const api = { async create() { return sandbox; } } as unknown as HermesE2BApi;
+  const factory = new HermesE2BFactory('api-key', 'template', 120_000, {
+    version: 'runtime-v1', allowedHosts: ['gateway.example.com'],
+  }, api);
+  await assert.rejects(factory.create(ownerId), (error: unknown) => {
+    assert.ok(error instanceof HermesProvisionError);
+    assert.equal(error.stage, 'network');
+    assert.equal(error.machineId, 'sandbox-orphan');
+    assert.equal(error.cleanupConfirmed, false);
+    return true;
+  });
 });
 
 test('quiescing waits for Hermes terminal state before pause and release', async () => {
@@ -270,8 +324,16 @@ test('quiescing does not pause or release while Hermes stays nonterminal', async
 test('kill switch is part of the active-run authorization predicate', async () => {
   const module = await import('../src/server/execution/hermes-executor');
   const mayContinue = (module as Record<string, unknown>).hermesExecutionMayContinue;
+  const runtimeEnabled = (module as Record<string, unknown>).hermesRuntimeEnabled;
+  const chatEnabled = (module as Record<string, unknown>).chatRuntimeEnabled;
   assert.equal(typeof mayContinue, 'function');
+  assert.equal(typeof runtimeEnabled, 'function');
+  assert.equal(typeof chatEnabled, 'function');
   const running = { state: 'RUNNING', cancel_requested: false, execution_version: 7 };
+  assert.equal((runtimeEnabled as (config: unknown) => boolean)({ runs_enabled: true, computer_enabled: true }), true);
+  assert.equal((runtimeEnabled as (config: unknown) => boolean)({ runs_enabled: true, computer_enabled: false }), false);
+  assert.equal((chatEnabled as (config: unknown, hermes: boolean) => boolean)({ runs_enabled: true, computer_enabled: false }, false), true);
+  assert.equal((chatEnabled as (config: unknown, hermes: boolean) => boolean)({ runs_enabled: true, computer_enabled: false }, true), false);
   assert.equal((mayContinue as (run: unknown, enabled: boolean, version: number) => boolean)(running, true, 7), true);
   assert.equal((mayContinue as (run: unknown, enabled: boolean, version: number) => boolean)(running, false, 7), false);
   assert.equal((mayContinue as (run: unknown, enabled: boolean, version: number) => boolean)({ ...running, cancel_requested: true }, true, 7), false);

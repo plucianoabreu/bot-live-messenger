@@ -4,7 +4,7 @@ import { workerDatabase } from '../server/execution/database';
 import { executeChat, type ChatMessage } from '../server/execution/chat';
 import { createOpenAIProvider } from '../server/execution/openai';
 import { loadChatMemoryContextWhenEnabled } from '../server/execution/memory-context';
-import { executeHermes, hermesExecutionMayContinue } from '../server/execution/hermes-executor';
+import { chatRuntimeEnabled, executeHermes, hermesExecutionMayContinue } from '../server/execution/hermes-executor';
 
 export const chatTask=task({
  id:'bot-messenger-chat',maxDuration:120,retry:{maxAttempts:1},
@@ -16,6 +16,7 @@ export const chatTask=task({
   const outputRate=Number(process.env.OPENAI_OUTPUT_MICROS_PER_TOKEN);
   if(!model || !Number.isFinite(inputRate) || inputRate<=0 || !Number.isFinite(outputRate) || outputRate<=0)throw new Error('MODEL_PRICING_NOT_CONFIGURED');
   const db=workerDatabase();
+  const hermesEnabled=process.env.HERMES_ENABLED==='true';
   const {data:r,error}=await db.rpc('claim_chat',{p_run_id:runId});
   if(error)throw new Error('CLAIM_FAILED');
   if(!r)return {skipped:true};
@@ -25,10 +26,10 @@ export const chatTask=task({
    try{
     const [runState,runtimeState]=await Promise.all([
      db.from('runs').select('state,cancel_requested,execution_version').eq('id',runId).single(),
-     db.from('runtime_config').select('runs_enabled').eq('singleton',true).single(),
+     db.from('runtime_config').select('runs_enabled,computer_enabled').eq('singleton',true).single(),
     ]);
     if(runState.error || runtimeState.error ||
-      !hermesExecutionMayContinue(runState.data,runtimeState.data?.runs_enabled===true,r.version))controller.abort();
+      !hermesExecutionMayContinue(runState.data,chatRuntimeEnabled(runtimeState.data,hermesEnabled),r.version))controller.abort();
    }catch{controller.abort();}
   },2000);
   try{
@@ -42,9 +43,10 @@ export const chatTask=task({
    // Default off: hosted chat may be deployed before the collaboration migration.
    // Once enabled, memory query or scope failures remain fail-closed.
    const memoryContext=await loadChatMemoryContextWhenEnabled(db,r.user_id,r.bot_id,process.env.MEMORY_ENABLED==='true',controller.signal);
-   const result=process.env.HERMES_ENABLED==='true'
+   const result=hermesEnabled
     ? await executeHermes({runId,version:r.version,ownerId:r.user_id,botId:r.bot_id,
-      instructions:[r.instructions,memoryContext].filter(Boolean).join('\n\n'),message:current.content,model,signal:controller.signal})
+      instructions:[r.instructions,memoryContext].filter(Boolean).join('\n\n'),message:current.content,model,signal:controller.signal,
+      exportPath:process.env.HERMES_EXPORT_PATH})
     : await executeChat({model,instructions:r.instructions,memoryContext,history,signal:controller.signal,provider:createOpenAIProvider(),
     authorize:async(bytes,output)=>{
      // Conservative byte-based bound plus framing allowance; prices must be verified for this model.

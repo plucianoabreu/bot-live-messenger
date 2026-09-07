@@ -1,7 +1,8 @@
 import { isIP } from 'node:net';
 import { Sandbox } from '@e2b/desktop';
 import { z } from 'zod';
-import { sanitizeHermesDiagnostic, type HermesMachine, type HermesMachineFactory } from './hermes-provision';
+import { HERMES_GATEWAY_LOG_PATH } from './hermes-launch-config';
+import { HermesProvisionError, sanitizeHermesDiagnostic, type HermesMachine, type HermesMachineFactory } from './hermes-provision';
 
 export type HermesNetworkPolicy = {
   version: string;
@@ -12,8 +13,10 @@ type E2BSandbox = {
   sandboxId: string;
   trafficAccessToken?: string;
   files: {
-    read(path: string, options?: { user?: string }): Promise<string>;
+    read(path: string, options?: { user?: string; format?: 'text' }): Promise<string>;
+    read(path: string, options: { user?: string; format: 'bytes' }): Promise<Uint8Array>;
     write(path: string, contents: string, options: { user: string }): Promise<unknown>;
+    remove(path: string, options?: { user?: string }): Promise<void>;
   };
   commands: { run(command: string, options: Record<string, unknown>): Promise<{
     exitCode: number; stdout?: string; stderr?: string;
@@ -130,9 +133,10 @@ export class HermesE2BFactory implements HermesMachineFactory {
     });
     try {
       await verifyPrivateNetwork(sandbox, this.policy);
-    } catch (error) {
-      await sandbox.kill();
-      throw error;
+    } catch {
+      let cleanupConfirmed = false;
+      try { await sandbox.kill(); cleanupConfirmed = true; } catch { /* preserve provider id for durable recovery */ }
+      throw new HermesProvisionError('network', undefined, sandbox.sandboxId, cleanupConfirmed);
     }
     return {
       id: sandbox.sandboxId,
@@ -147,7 +151,7 @@ export class HermesE2BFactory implements HermesMachineFactory {
       },
       async diagnose() {
         const result = await sandbox.commands.run(
-          "sh -lc 'tail -n 80 /opt/blm-hermes-state/gateway.log 2>&1 || true'",
+          `sh -lc 'tail -n 80 ${HERMES_GATEWAY_LOG_PATH} 2>&1 || true'`,
           { user: 'root', timeoutMs: 10_000 },
         );
         return sanitizeHermesDiagnostic(`${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim());

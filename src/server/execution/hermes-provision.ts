@@ -1,10 +1,19 @@
 import { randomBytes } from 'node:crypto';
 import { z } from 'zod';
+import {
+  HERMES_EXPORT_HELPER_PATH,
+  hermesExportHelperSource,
+} from './hermes-export-reader';
+import {
+  HERMES_LAUNCH_COMMAND,
+  HERMES_LAUNCH_PATH,
+  hermesLaunchConfiguration,
+} from './hermes-launch-config';
 
 export const HERMES_REVISION = '233757037df1f03f9fe1cfddc097acd5ad7f7510';
 
 export type HermesProvisionStage =
-  | 'revision' | 'identity' | 'config' | 'credentials' | 'launcher' | 'start' | 'readiness';
+  | 'network' | 'revision' | 'identity' | 'config' | 'credentials' | 'launcher' | 'start' | 'readiness' | 'binding';
 
 export class HermesProvisionError extends Error {
   readonly name = 'HermesProvisionError';
@@ -12,6 +21,8 @@ export class HermesProvisionError extends Error {
   constructor(
     readonly stage: HermesProvisionStage,
     readonly diagnostic?: string,
+    readonly machineId?: string,
+    readonly cleanupConfirmed = false,
   ) {
     super(`HERMES_PROVISION_FAILED:${stage}`);
   }
@@ -47,7 +58,9 @@ export interface HermesMachineFactory {
 export async function installHermesImage(machine: HermesMachine) {
   await machine.run("id -u blm-hermes >/dev/null 2>&1 || useradd --system --home-dir /workspace --shell /usr/sbin/nologin blm-hermes");
   await machine.run('install -d -o blm-hermes -g blm-hermes -m 700 /workspace /workspace/shared /workspace/exports /opt/blm-hermes-state');
-  await machine.run('install -d -o root -g root -m 700 /opt/blm-hermes-secrets');
+  await machine.run('install -d -o root -g root -m 700 /opt/blm-hermes-secrets /opt/blm-hermes-export');
+  await machine.write(HERMES_EXPORT_HELPER_PATH, hermesExportHelperSource());
+  await machine.run(`chown root:root ${HERMES_EXPORT_HELPER_PATH} && chmod 700 ${HERMES_EXPORT_HELPER_PATH}`);
   await machine.run('apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv git ca-certificates');
   await machine.run('python3 -m venv /opt/blm-bootstrap && /opt/blm-bootstrap/bin/pip install uv==0.9.26');
   await machine.run('install -d -o root -g root -m 755 /opt/blm-python');
@@ -65,13 +78,9 @@ export async function provisionHermes(
   modelGateway: { url: string; scopedToken: string },
 ) {
   z.uuid().parse(ownerId);
-  const gateway = new URL(modelGateway.url);
-  if (gateway.protocol !== 'https:' || gateway.username || gateway.password || gateway.search || gateway.hash) {
-    throw new Error('MODEL_GATEWAY_INVALID');
-  }
-  if (!modelGateway.scopedToken.trim()) throw new Error('MODEL_GATEWAY_TOKEN_MISSING');
-  const machine = await factory.create(ownerId);
   const apiKey = randomBytes(32).toString('hex');
+  const launchConfiguration = hermesLaunchConfiguration({ gatewayUrl: modelGateway.url, apiServerKey: apiKey }, modelGateway.scopedToken);
+  const machine = await factory.create(ownerId);
   let stage: HermesProvisionStage = 'revision';
   try {
     await machine.run(`test "$(git -C /opt/blm-hermes rev-parse HEAD)" = '${HERMES_REVISION}'`);
@@ -87,13 +96,8 @@ export async function provisionHermes(
     ].join('\n'));
     // Only an account-scoped proxy token enters the runtime, never the provider or Supabase key.
     stage = 'credentials';
-    await machine.write('/opt/blm-hermes-secrets/launch.json', JSON.stringify({
-      HERMES_HOME: '/opt/blm-hermes-state', API_SERVER_KEY: apiKey, API_SERVER_ENABLED: 'true',
-      API_SERVER_HOST: '0.0.0.0', API_SERVER_PORT: '8642',
-      OPENAI_BASE_URL: gateway.toString(), OPENAI_API_KEY: modelGateway.scopedToken,
-      TERMINAL_CWD: '/workspace/shared', HERMES_WRITE_SAFE_ROOT: '/workspace', HOME: '/workspace',
-    }));
-    await machine.run('chown root:root /opt/blm-hermes-secrets/launch.json && chmod 600 /opt/blm-hermes-secrets/launch.json');
+    await machine.write(HERMES_LAUNCH_PATH, JSON.stringify(launchConfiguration));
+    await machine.run(`chown root:root ${HERMES_LAUNCH_PATH} && chmod 600 ${HERMES_LAUNCH_PATH}`);
     stage = 'launcher';
     await machine.write('/opt/blm-hermes-launch.py', [
       'import json, os, pwd',
@@ -110,7 +114,7 @@ export async function provisionHermes(
     ].join('\n'));
     await machine.run('chown root:root /opt/blm-hermes-launch.py && chmod 700 /opt/blm-hermes-launch.py');
     stage = 'start';
-    await machine.start('umask 077 && python3 /opt/blm-hermes-launch.py > /opt/blm-hermes-state/gateway.log 2>&1');
+    await machine.start(HERMES_LAUNCH_COMMAND);
     // Check the local authenticated endpoint without printing the server key or response.
     stage = 'readiness';
     await machine.write('/opt/blm-hermes-ready.py', [
@@ -142,7 +146,11 @@ export async function provisionHermes(
       const rawDiagnostic = await machine.diagnose?.();
       diagnostic = rawDiagnostic ? sanitizeHermesDiagnostic(rawDiagnostic) : undefined;
     } catch { /* diagnostics must not block cleanup */ }
-    try { await machine.destroy(); } catch { throw new Error('HERMES_PROVISION_CLEANUP_REQUIRED'); }
-    throw new HermesProvisionError(stage, diagnostic);
+    let cleanupConfirmed = false;
+    try {
+      await machine.destroy();
+      cleanupConfirmed = true;
+    } catch { /* caller can recover the exposed machine id */ }
+    throw new HermesProvisionError(stage, diagnostic, machine.id, cleanupConfirmed);
   }
 }
