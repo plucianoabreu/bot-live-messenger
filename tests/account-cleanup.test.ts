@@ -9,7 +9,9 @@ const migrations = [
   '202609060001_initial', '202609060002_pilot_quotas', '202609060003_team_profiles',
   '20260906193000_chat_worker', '20260906200000_collaboration_foundation',
   '20260906210000_live_chat_updates', '20260906220000_computer_foundation',
-  '20260906230000_account_cleanup',
+  '20260906230000_account_cleanup', '20260907163853_hermes_runtime',
+  '20260907170000_hermes_artifacts_lifecycle', '20260907180000_hermes_security_recovery',
+  '20260907190000_hermes_lifecycle_hardening',
 ];
 
 test('account deletion is durable, cancels work, inventories private resources and keeps a completion ledger', async () => {
@@ -36,6 +38,7 @@ test('account deletion is durable, cancels work, inventories private resources a
     const watchPath = `${A}/${watchId}/0`;
     await db.exec(`reset role;
       update public.workspace_computers set state='READY',provider_id='provider-a',template_version='v1' where user_id='${A}';
+      insert into public.hermes_workspaces(user_id,machine_id,proxy_hash) values('${A}','hermes-a','${'b'.repeat(64)}');
       insert into public.artifacts(user_id,run_id,name,object_path,mime_type,size_bytes) values('${A}','${run}','report.txt','${artifactPath}','text/plain',12);
       insert into public.watch_leases(user_id,id,run_id,expires_at) values('${A}','${watchId}','${run}',now()+interval '1 minute');
       insert into public.watch_frames(lease_id,user_id,slot,object_path,content_type,size_bytes,checksum_sha256,captured_at)
@@ -55,20 +58,25 @@ test('account deletion is durable, cancels work, inventories private resources a
     await assert.rejects(db.query('select public.claim_account_deletion()'), /permission denied/);
     await assert.rejects(db.query('select public.renew_account_deletion_claim($1)', [crypto.randomUUID()]), /permission denied/);
     await assert.rejects(db.query("select public.record_account_deletion_stage($1,'ARTIFACTS_DELETED')", [crypto.randomUUID()]), /permission denied/);
+    await assert.rejects(db.query('select public.record_account_deletion_computer_receipt($1,$2)', [crypto.randomUUID(), 'provider-a']), /permission denied/);
     await asUser(B);
     assert.equal((await db.query<{ value: null }>('select public.get_account_deletion_request() as value')).rows[0].value, null);
     await db.exec('reset role;set role service_role;');
-    const cleanup = (await db.query<{ value: { request_id: string; user_id: string; claim_token: string; artifact_paths: string[]; watch_paths: string[]; computer_provider_id: string; artifacts_deleted: boolean } }>('select public.claim_account_deletion() as value')).rows[0].value;
+    const cleanup = (await db.query<{ value: { request_id: string; user_id: string; claim_token: string; artifact_paths: string[]; watch_paths: string[]; computer_provider_ids: string[]; artifacts_deleted: boolean } }>('select public.claim_account_deletion() as value')).rows[0].value;
     assert.equal(cleanup.request_id, requested.id);
     assert.equal(cleanup.user_id, A);
     assert.deepEqual(cleanup.artifact_paths, [artifactPath]);
     assert.deepEqual(cleanup.watch_paths, [watchPath]);
-    assert.equal(cleanup.computer_provider_id, 'provider-a');
+    assert.deepEqual(cleanup.computer_provider_ids, ['hermes-a', 'provider-a']);
     assert.equal(cleanup.artifacts_deleted, false);
     assert.equal((await db.query<{ ok: boolean }>('select public.finish_account_deletion($1) as ok', [cleanup.claim_token])).rows[0].ok, false);
     assert.equal((await db.query<{ ok: boolean }>("select public.record_account_deletion_stage($1,'WATCH_DELETED') as ok", [cleanup.claim_token])).rows[0].ok, false);
     assert.equal((await db.query<{ ok: boolean }>("select public.record_account_deletion_stage($1,'ARTIFACTS_DELETED') as ok", [cleanup.claim_token])).rows[0].ok, true);
     assert.equal((await db.query<{ ok: boolean }>("select public.record_account_deletion_stage($1,'WATCH_DELETED') as ok", [cleanup.claim_token])).rows[0].ok, true);
+    assert.equal((await db.query<{ ok: boolean }>("select public.record_account_deletion_stage($1,'COMPUTER_DESTROYED') as ok", [cleanup.claim_token])).rows[0].ok, false);
+    assert.equal((await db.query<{ ok: boolean }>('select public.record_account_deletion_computer_receipt($1,$2) as ok', [cleanup.claim_token, 'not-owned'])).rows[0].ok, false);
+    assert.equal((await db.query<{ ok: boolean }>('select public.record_account_deletion_computer_receipt($1,$2) as ok', [cleanup.claim_token, 'provider-a'])).rows[0].ok, true);
+    assert.equal((await db.query<{ ok: boolean }>('select public.record_account_deletion_computer_receipt($1,$2) as ok', [cleanup.claim_token, 'hermes-a'])).rows[0].ok, true);
     assert.equal((await db.query<{ ok: boolean }>("select public.record_account_deletion_stage($1,'COMPUTER_DESTROYED') as ok", [cleanup.claim_token])).rows[0].ok, true);
     await db.exec(`reset role;delete from auth.users where id='${A}';set role service_role;`);
     assert.equal((await db.query<{ ok: boolean }>("select public.record_account_deletion_stage($1,'AUTH_DELETED') as ok", [cleanup.claim_token])).rows[0].ok, true);
@@ -78,6 +86,9 @@ test('account deletion is durable, cancels work, inventories private resources a
       'memory_items','memory_versions','bot_groups','bot_group_memberships','root_task_budgets','bot_handoffs','handoff_source_messages']) {
       assert.equal((await db.query(`select * from public.${table}`)).rows.length, 0, `${table} should be erased`);
     }
+    assert.equal((await db.query('select * from public.account_pilot_budgets where user_id=$1', [A])).rows.length, 0);
+    assert.equal((await db.query('select * from public.account_pilot_reservations where user_id=$1', [A])).rows.length, 0);
+    assert.equal((await db.query('select * from public.hermes_workspaces')).rows.length, 0, 'hermes_workspaces should be erased');
     await db.exec('set role service_role;');
     assert.equal((await db.query<{ ok: boolean }>('select public.finish_account_deletion($1) as ok', [cleanup.claim_token])).rows[0].ok, true);
     await db.exec('reset role;');
@@ -108,5 +119,86 @@ test('failed cleanup claims are retryable and expose only bounded error codes', 
     await db.exec('reset role;');
     const row = (await db.query<{ state: string; last_error_code: string }>('select state,last_error_code from public.account_deletion_requests')).rows[0];
     assert.deepEqual(row, { state: 'FAILED', last_error_code: 'AUTH_DELETE_FAILED' });
+  } finally { await db.close(); }
+});
+
+test('account deletion waits for unresolved operations and artifact uploads to settle', async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;
+      create table auth.users(id uuid primary key);
+      create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+      grant usage on schema auth to authenticated;insert into auth.users values('${A}');`);
+    for (const migration of migrations) await db.exec(await readFile(new URL(`../supabase/migrations/${migration}.sql`, import.meta.url), 'utf8'));
+    await db.exec(`select set_config('request.jwt.claim.sub','${A}',false);set role authenticated;select public.ensure_bots();
+      reset role;update public.runtime_config set runs_enabled=true,computer_enabled=true;set role authenticated;`);
+    const bot = (await db.query<{ id: string }>('select id from public.bots limit 1')).rows[0].id;
+    const run = (await db.query<{ id: string }>("select public.enqueue_message($1,'hello',$2) as id", [bot, crypto.randomUUID()])).rows[0].id;
+    await db.exec('reset role;set role service_role;');
+    const claim = (await db.query<{ value: { version: number } }>('select public.claim_chat($1) as value', [run])).rows[0].value;
+    const operationId = crypto.randomUUID();
+    const objectPath = `${A}/${run}/final/${'a'.repeat(64)}`;
+    await db.exec(`reset role;
+      insert into public.computer_operations(id,user_id,run_id,run_execution_version,resource_key,fencing_token,kind,deadline_at)
+        values('${operationId}','${A}','${run}',${claim.version},'desktop',1,'action',now()+interval '1 minute');
+      insert into public.artifact_upload_intents(user_id,run_id,run_execution_version,resource_key,fencing_token,
+        final_output_key,name,object_path,mime_type,size_bytes,checksum_sha256)
+        values('${A}','${run}',${claim.version},'desktop',1,'output','report.txt','${objectPath}','text/plain',6,'${'a'.repeat(64)}');
+      set role service_role;select public.request_account_deletion('${A}');`);
+
+    assert.equal((await db.query<{ value: null }>('select public.claim_account_deletion() as value')).rows[0].value, null);
+    await db.exec(`reset role;update public.computer_operations set state='SUCCEEDED',finished_at=now() where id='${operationId}';set role service_role;`);
+    assert.equal((await db.query<{ value: null }>('select public.claim_account_deletion() as value')).rows[0].value, null,
+      'a pending artifact must independently block cleanup');
+    await db.exec("reset role;update public.artifact_upload_intents set state='CLEANUP_REQUIRED';set role service_role;");
+    assert.equal((await db.query<{ value: null }>('select public.claim_account_deletion() as value')).rows[0].value, null,
+      'an artifact awaiting cleanup must block account cleanup');
+    await db.exec(`reset role;update public.artifact_upload_intents set state='REJECTED',finished_at=now();
+      update public.computer_operations set state='UNCERTAIN',finished_at=null where id='${operationId}';set role service_role;`);
+    assert.equal((await db.query<{ value: null }>('select public.claim_account_deletion() as value')).rows[0].value, null,
+      'an uncertain operation must independently block cleanup');
+    await db.exec(`reset role;update public.computer_operations set state='FAILED',finished_at=now() where id='${operationId}';set role service_role;`);
+    assert.equal((await db.query<{ value: null }>('select public.claim_account_deletion() as value')).rows[0].value, null,
+      'a recently rejected artifact must retain a grace period for late uploads');
+    await db.exec("reset role;update public.artifact_upload_intents set finished_at=now()-interval '4 minutes';set role service_role;");
+    const cleanup = (await db.query<{ value: { user_id: string } }>('select public.claim_account_deletion() as value')).rows[0].value;
+    assert.equal(cleanup.user_id, A);
+  } finally { await db.close(); }
+});
+
+test('account deletion retries return only provider targets without receipts', async () => {
+  const db = new PGlite();
+  try {
+    await db.exec(`create role anon;create role authenticated;create role service_role;create schema auth;
+      create table auth.users(id uuid primary key);
+      create function auth.uid() returns uuid language sql stable as $$select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+      grant usage on schema auth to authenticated;insert into auth.users values('${A}');`);
+    for (const migration of migrations) await db.exec(await readFile(new URL(`../supabase/migrations/${migration}.sql`, import.meta.url), 'utf8'));
+    await db.exec(`select set_config('request.jwt.claim.sub','${A}',false);set role authenticated;select public.ensure_bots();reset role;
+      update public.workspace_computers set state='READY',provider_id='provider-a',template_version='v1' where user_id='${A}';
+      insert into public.hermes_workspaces(user_id,machine_id,proxy_hash) values('${A}','hermes-a','${'b'.repeat(64)}');
+      set role service_role;select public.request_account_deletion('${A}');`);
+    const first = (await db.query<{ value: { claim_token: string; computer_provider_ids: string[] } }>(
+      'select public.claim_account_deletion() as value',
+    )).rows[0].value;
+    assert.deepEqual(first.computer_provider_ids, ['hermes-a', 'provider-a']);
+    assert.equal((await db.query<{ ok: boolean }>(
+      'select public.record_account_deletion_computer_receipt($1,$2) as ok', [first.claim_token, 'provider-a'],
+    )).rows[0].ok, true);
+    assert.equal((await db.query<{ ok: boolean }>(
+      "select public.fail_account_deletion($1,'COMPUTER_CLEANUP_FAILED') as ok", [first.claim_token],
+    )).rows[0].ok, true);
+    await db.exec("reset role;update public.account_deletion_requests set next_attempt_at=now();set role service_role;");
+    const retry = (await db.query<{ value: { claim_token: string; computer_provider_ids: string[] } }>(
+      'select public.claim_account_deletion() as value',
+    )).rows[0].value;
+    assert.notEqual(retry.claim_token, first.claim_token);
+    assert.deepEqual(retry.computer_provider_ids, ['hermes-a']);
+    assert.equal((await db.query<{ ok: boolean }>(
+      'select public.record_account_deletion_computer_receipt($1,$2) as ok', [first.claim_token, 'hermes-a'],
+    )).rows[0].ok, false, 'a stale cleanup claim cannot write a receipt');
+    assert.equal((await db.query<{ ok: boolean }>(
+      'select public.record_account_deletion_computer_receipt($1,$2) as ok', [retry.claim_token, 'hermes-a'],
+    )).rows[0].ok, true);
   } finally { await db.close(); }
 });

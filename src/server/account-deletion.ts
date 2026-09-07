@@ -64,7 +64,8 @@ export type AccountCleanupClaim = {
   claim_token: string;
   artifact_paths: string[];
   watch_paths: string[];
-  computer_provider_id: string | null;
+  computer_provider_ids?: string[];
+  computer_provider_id?: string | null;
   artifacts_deleted: boolean;
   watch_deleted: boolean;
   computer_destroyed: boolean;
@@ -85,6 +86,7 @@ export type AccountCleanupDependencies = {
   claim(): Promise<AccountCleanupClaim | null>;
   renew(claimToken: string): Promise<boolean>;
   recordStage(claimToken: string, stage: AccountCleanupStage): Promise<boolean>;
+  recordComputerReceipt(claimToken: string, providerId: string): Promise<boolean>;
   removeArtifacts(paths: string[]): Promise<void>;
   removeWatchFrames(paths: string[]): Promise<void>;
   destroyComputer(providerId: string): Promise<void>;
@@ -100,6 +102,17 @@ function assertOwnedPaths(userId: string, paths: readonly string[]) {
   }
 }
 
+function computerProviderIds(claim: AccountCleanupClaim) {
+  const values = [
+    ...(claim.computer_provider_ids ?? []),
+    ...(claim.computer_provider_id ? [claim.computer_provider_id] : []),
+  ];
+  if (values.some(value => typeof value !== 'string' || !value || value.length > 200 || /[\u0000-\u001f\u007f]/u.test(value))) {
+    throw new Error('INVALID_PROVIDER_ID');
+  }
+  return [...new Set(values)];
+}
+
 /** Processes at most one leased request. Provider operations must be idempotent. */
 export async function processOneAccountDeletion(dependencies: AccountCleanupDependencies) {
   const claim = await dependencies.claim();
@@ -108,6 +121,7 @@ export async function processOneAccountDeletion(dependencies: AccountCleanupDepe
   try {
     assertOwnedPaths(claim.user_id, claim.artifact_paths);
     assertOwnedPaths(claim.user_id, claim.watch_paths);
+    const providerIds = computerProviderIds(claim);
     const runStage = async (receipt: boolean, failure: CleanupFailureCode, durableStage: AccountCleanupStage, action: () => Promise<void>) => {
       if (receipt) return;
       stage = failure;
@@ -122,7 +136,12 @@ export async function processOneAccountDeletion(dependencies: AccountCleanupDepe
       if (claim.watch_paths.length > 0) await dependencies.removeWatchFrames(claim.watch_paths);
     });
     await runStage(claim.computer_destroyed, 'COMPUTER_CLEANUP_FAILED', 'COMPUTER_DESTROYED', async () => {
-      if (claim.computer_provider_id) await dependencies.destroyComputer(claim.computer_provider_id);
+      for (const providerId of providerIds) {
+        await dependencies.destroyComputer(providerId);
+        if (!await dependencies.recordComputerReceipt(claim.claim_token, providerId)) {
+          throw new Error('STALE_CLEANUP_LEASE');
+        }
+      }
     });
     await runStage(claim.auth_deleted, 'AUTH_DELETE_FAILED', 'AUTH_DELETED', () => dependencies.deleteAuthUser(claim.user_id));
     stage = 'FINALIZATION_FAILED';
@@ -158,6 +177,14 @@ export function supabaseAccountCleanupDependencies(
     recordStage: async (claimToken, stage) => {
       const result = await db.rpc('record_account_deletion_stage', { p_claim_token: claimToken, p_stage: stage });
       if (result.error) throw new Error('ACCOUNT_CLEANUP_STAGE_FAILED');
+      return result.data === true;
+    },
+    recordComputerReceipt: async (claimToken, providerId) => {
+      const result = await db.rpc('record_account_deletion_computer_receipt', {
+        p_claim_token: claimToken,
+        p_provider_id: providerId,
+      });
+      if (result.error) throw new Error('ACCOUNT_CLEANUP_RECEIPT_FAILED');
       return result.data === true;
     },
     removeArtifacts: async paths => {

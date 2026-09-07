@@ -14,12 +14,14 @@ test('operator readiness reports missing keys and flags without exposing configu
   assert.equal(report.requestedFlags.memoryEnabled, false);
   assert.equal(report.requestedFlags.cleanupEnabled, false);
   assert.equal(report.configuration.accountCleanup.ready, false);
+  assert.ok(report.configuration.missing.hermes.includes('HERMES_RATE_CARD_ID'));
 });
 
 test('operator diagnostics expose bounded identifiers and aggregate counts only', () => {
   const report = operatorDiagnosticReport({ admissions: { runsEnabled: false, computerEnabled: false, watchEnabled: false },
     failedRuns: [{ id: 'run-a', state: 'FAILED', errorCode: 'BOUNDED' }], staleRuns: [], orphanedComputers: [],
+    hermesRecoveryRequired: [{ id: 'run-stuck', state: 'RECOVERY_IN_PROGRESS', providerId: 'machine-a' }],
     pendingAccountDeletions: [{ id: 'deletion-a', state: 'FAILED', errorCode: 'AUTH_DELETE_FAILED' }] });
-  assert.deepEqual(report.counts, { failedRuns: 1, staleRuns: 0, orphanedComputers: 0, pendingAccountDeletions: 1 });
+  assert.deepEqual(report.counts, { failedRuns: 1, staleRuns: 0, orphanedComputers: 0, hermesRecoveryRequired: 1, pendingAccountDeletions: 1 });
   assert.doesNotMatch(JSON.stringify(report), /message|password|content|credential/i);
 });

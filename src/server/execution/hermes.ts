@@ -1,7 +1,12 @@
 import { z } from 'zod';
 
 /** One trusted, provisioned Hermes server per account. Never accept this binding from a browser. */
-export type HermesWorkspace = { ownerId: string; baseUrl: string; apiKey: string };
+export type HermesWorkspace = {
+  ownerId: string;
+  baseUrl: string;
+  apiKey: string;
+  trafficAccessToken: string;
+};
 const uuid = z.uuid();
 const remoteId = z.string().regex(/^[a-zA-Z0-9_-]{1,160}$/);
 const started = z.object({ run_id: remoteId, status: z.string() });
@@ -25,6 +30,9 @@ export class HermesClient {
       throw new Error('HERMES_ENDPOINT_INVALID');
     }
     if (!workspace.apiKey.trim() || /[\r\n]/.test(workspace.apiKey)) throw new Error('HERMES_CREDENTIAL_INVALID');
+    if (!workspace.trafficAccessToken.trim() || /[\r\n]/.test(workspace.trafficAccessToken)) {
+      throw new Error('HERMES_TRAFFIC_CREDENTIAL_INVALID');
+    }
     this.origin = url.origin;
   }
 
@@ -35,7 +43,12 @@ export class HermesClient {
       response = await this.transport(this.origin + path, {
         method: body === undefined ? 'GET' : 'POST', redirect: 'error',
         signal: AbortSignal.any([signal, AbortSignal.timeout(15000)]),
-        headers: { Authorization: `Bearer ${this.workspace.apiKey}`, 'Content-Type': 'application/json', ...headers },
+        headers: {
+          Authorization: `Bearer ${this.workspace.apiKey}`,
+          'E2B-Traffic-Access-Token': this.workspace.trafficAccessToken,
+          'Content-Type': 'application/json',
+          ...headers,
+        },
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch { throw new Error('HERMES_TRANSPORT_FAILED'); }
