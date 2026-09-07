@@ -22,7 +22,14 @@ async function command(sandbox: LiveSandbox, text: string, user = 'root') {
 }
 
 async function startLongTask(sandbox: LiveSandbox, label: string) {
-  const result = await command(sandbox, `bash -lc 'sleep 600 >/tmp/${label}.log 2>&1 & echo $!'`, 'blm-hermes');
+  // E2B's command service starts a login shell for `user`; the service account
+  // intentionally has nologin. Enter the account from the root control plane
+  // instead, matching the gateway launcher's explicit privilege drop.
+  const result = await command(
+    sandbox,
+    `runuser -u blm-hermes -- sh -c 'sleep 600 >/tmp/${label}.log 2>&1 & echo $!'`,
+    'root',
+  );
   const pid = Number(result.stdout.trim());
   check(Number.isInteger(pid) && pid > 1, `${label}_pid`);
   return pid;
