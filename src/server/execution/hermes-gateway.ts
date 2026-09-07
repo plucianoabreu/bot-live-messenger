@@ -23,6 +23,7 @@ export interface HermesGatewayDependencies {
 
 /** Only this gateway holds the real model key. Reservations are never refunded on unknown outcomes. */
 export async function handleHermesModel(request: Request, deps: HermesGatewayDependencies): Promise<Response> {
+  let stage = 'validation';
   try {
     const token = /^Bearer ([a-f0-9]{64})$/.exec(request.headers.get('authorization') ?? '')?.[1];
     if (!token) return Response.json({ error: { message: 'Unauthorized' } }, { status: 401 });
@@ -47,10 +48,13 @@ export async function handleHermesModel(request: Request, deps: HermesGatewayDep
     const body = { model: deps.model, messages: parsed.messages, tools: parsed.tools,
       stream: false, max_completion_tokens: 1200, reasoning_effort: 'high' };
     const cost = Math.ceil((Buffer.byteLength(JSON.stringify(body)) + 4096) * deps.inputRate + 1200 * deps.outputRate);
+    stage = 'reservation';
     await deps.reserve(createHash('sha256').update(token).digest('hex'), cost);
+    stage = 'provider';
     const result = await deps.complete(body, AbortSignal.any([request.signal, AbortSignal.timeout(60_000)]));
     return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
   } catch {
-    return Response.json({ error: { message: 'Execution unavailable or task limit reached' } }, { status: 403 });
+    console.error('HERMES_GATEWAY_REJECTED', stage);
+    return Response.json({ error: { code: `HERMES_${stage.toUpperCase()}_FAILED`, message: 'Execution unavailable or task limit reached' } }, { status: 403 });
   }
 }
