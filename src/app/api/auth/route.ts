@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { sameOrigin } from '@/server/http';
 import { authConfigured, supabase } from '@/lib/supabase/server';
 import { signupErrorResponse } from '@/domain/auth-errors';
+import { configuredAppOrigin } from '@/server/auth/callback';
 const email=z.email().max(254);
 const password=z.string().min(6).max(128);
 const input=z.discriminatedUnion('action',[
@@ -32,7 +33,7 @@ export async function POST(request:Request){
   const {error}=await db.auth.updateUser({password:body.password});
   return Response.json(error?{error:'Não foi possível alterar a senha. Tente outra senha.'}:{ok:true},{status:error?400:200});
  }
- const origin=process.env.APP_URL;if(!origin)return Response.json({error:'O acesso ainda está sendo preparado.'},{status:503});
+ const origin=configuredAppOrigin(process.env.APP_URL);if(!origin)return Response.json({error:'O acesso ainda está sendo preparado.'},{status:503});
  if(body.action==='recover'){
   const {error}=await db.auth.resetPasswordForEmail(body.email,{redirectTo:`${origin}/auth/callback?flow=recovery`});
   return Response.json(error?{error:'Não foi possível enviar agora. Tente novamente em instantes.'}:{ok:true},{status:error?429:200});
