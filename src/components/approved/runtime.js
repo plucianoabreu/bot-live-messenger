@@ -3,7 +3,7 @@
 import { presence } from '../../domain/bots';
 import { displayPictures, defaultPicture, pictureUrl, botProfileInput } from '../../domain/profiles';
 import { isActiveRun } from '../../domain/runs';
-import { draftAfterSuccessfulSend, liveEntryState, runAfterRequest } from './live-runtime';
+import { acceptedMessagesAfterSend, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest } from './live-runtime';
 import {
  activeMemoryVersion,collaborationStorageMode,createGenerationGate,groupFromApi,handoffLabel,handoffsForBot,
  reconcileMembershipChanges,sourceMessagesForHandoff,
@@ -41,7 +41,13 @@ export function welcomeDocumentState({live=false,runsEnabled=false,watchAvailabl
    : runsEnabled
     ? 'Conta conectada: conversas e tarefas estão disponíveis; Acompanhar ainda não está disponível.'
     : 'Conta conectada: conversas salvas; tarefas e Acompanhar ainda estão em preparação.';
+ const availability=live&&!runsEnabled
+  ? '\n\nMODO ATUAL\nAs tarefas reais ainda não estão disponíveis nesta conta. Para testar uma conversa agora, saia e escolha a demonstração local.'
+  : live
+   ? '\n\nLIMITES DO PILOTO\nSua conta pode iniciar até 5 tarefas de chat durante este piloto. O saldo restante ainda não aparece nesta tela.'
+   : '';
  return {mode:live?'live':'demo',disclosure,guide:`COMO USAR O BOT MESSENGER
+${availability}
 
 1. Escolha um bot na lista e abra a conversa.
 2. Diga o que você precisa e como quer receber o resultado.
@@ -195,11 +201,16 @@ function renderConversation(scrollToEnd = false) {
   const run=runs[agent.id];
   const pending = options.live ? isActiveRun(run) || livePending.has(agent.id) : state.jobs.has(agent.id);
   const offline = agent.status === 'offline';
-  $('connection-notice').hidden = !offline;
-  $('connection-notice').innerHTML = offline ? `<span>ⓘ ${escapeHTML(agent.name)} está offline.</span><button data-command="connect">Conectar bot</button>` : '';
+  const composer=liveComposerState({offline,pending,live:Boolean(options.live),runsEnabled:Boolean(options.runsEnabled)});
+  $('connection-notice').hidden = !offline&&!composer.runtimeUnavailable;
+  $('connection-notice').innerHTML = offline
+   ? `<span>ⓘ ${escapeHTML(agent.name)} está offline.</span><button data-command="connect">Conectar bot</button>`
+   : composer.runtimeUnavailable
+    ? '<span>ⓘ As tarefas reais ainda não estão disponíveis nesta conta. Para testar uma conversa agora, saia e escolha a demonstração local.</span>'
+    : '';
   $('typing-status').textContent = pending ? `${agent.name} está trabalhando na sua solicitação...` : '';
-  $('message-input').disabled = offline;
-  $('send').disabled = offline || pending || (options.live && !options.runsEnabled);
+  $('message-input').disabled = composer.inputDisabled;
+  $('send').disabled = composer.sendDisabled;
   $('stop-task').disabled = !pending || (options.live && (!run || run.cancel_requested));
   $('nudge').disabled = offline;
   $('favorite-button').querySelector('span:last-child').textContent = isFavorite(agent.id) ? 'Favorito' : 'Favoritar';
@@ -210,7 +221,7 @@ function renderConversation(scrollToEnd = false) {
   $('last-message').textContent = lastMessage?.time ? `Última mensagem recebida às ${lastMessage.time} · Bot simulado` : 'Esta é uma conversa com um bot de IA.';
   if(options.live) {
     $('last-message').textContent=options.runsEnabled?'Conversa salva na sua conta.':'As tarefas ainda estão sendo preparadas.';
-    const status={QUEUED:'Sua tarefa está na fila.',RUNNING:'O bot está trabalhando...',WAITING_FOR_USER:'O bot precisa da sua resposta.',SUCCEEDED:'Resposta concluída.',FAILED:'Não foi possível concluir a tarefa.',CANCELLED:'Tarefa interrompida.'};
+    const status={QUEUED:'Sua tarefa está na fila.',RUNNING:'O bot está trabalhando...',WAITING_FOR_USER:'O bot precisa da sua resposta.',SUCCEEDED:'Resposta concluída.',FAILED:'Não foi possível concluir a tarefa. Sua mensagem continua salva; tente novamente.',CANCELLED:'Tarefa interrompida.'};
     $('typing-status').textContent=run?.cancel_requested&&isActiveRun(run)?'Parando...':status[run?.state]||'';
   }
   renderAttachments();
@@ -1139,7 +1150,9 @@ async function liveSend(event){
   if(abort.signal.aborted)return;
   requestKeys.delete(id);state.drafts[id]=draftAfterSuccessfulSend(state.drafts[id],submittedDraft);
   if(state.active===id){const input=$('message-input');input.value=draftAfterSuccessfulSend(input.value,submittedDraft);state.drafts[id]=input.value;}
+  state.messages[id]=acceptedMessagesAfterSend(state.messages[id]||[],{id:result.messageId,content});
   options.runs=runAfterRequest(options.runs,id,result.run||{id:result.runId,bot_id:id,kind:'chat',state:result.status||'QUEUED',cancel_requested:false,error_code:null,created_at:new Date().toISOString(),finished_at:null});
+  if(state.active===id)renderConversation(true);
   options.refresh?.();
  }catch(e){if(!abort.signal.aborted)notify(e.message || 'Não foi possível enviar.');}
  finally{livePending.delete(id);if(!abort.signal.aborted)renderConversation();}

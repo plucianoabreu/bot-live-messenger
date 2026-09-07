@@ -3,7 +3,13 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isActiveRun, livePollInterval, parseSequencePage } from '../src/domain/runs';
-import { draftAfterSuccessfulSend, liveEntryState, runAfterRequest } from '../src/components/approved/live-runtime';
+import {
+ acceptedMessagesAfterSend,
+ draftAfterSuccessfulSend,
+ liveComposerState,
+ liveEntryState,
+ runAfterRequest,
+} from '../src/components/approved/live-runtime';
 
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const migrations=['202609060001_initial','202609060002_pilot_quotas','202609060003_team_profiles','20260906193000_chat_worker','20260906210000_live_chat_updates'];
@@ -22,6 +28,27 @@ test('sequence cursors and live polling reject ambiguous input and track active 
 test('successful send clears only the exact submitted draft',()=>{
  assert.equal(draftAfterSuccessfulSend('submitted message','submitted message'),'');
  assert.equal(draftAfterSuccessfulSend('new draft typed during request','submitted message'),'new draft typed during request');
+});
+test('disabled live runtime gives the composer an explicit unavailable state',()=>{
+ assert.deepEqual(liveComposerState({offline:false,pending:false,live:true,runsEnabled:false}),{
+  inputDisabled:true,
+  sendDisabled:true,
+  runtimeUnavailable:true,
+ });
+ assert.equal(liveComposerState({offline:false,pending:false,live:true,runsEnabled:true}).runtimeUnavailable,false);
+});
+test('accepted send appears immediately in the local transcript',()=>{
+ const current=[{id:'assistant-1',author:'agent',text:'Como posso ajudar?'}] as const;
+ assert.deepEqual(acceptedMessagesAfterSend(current,{id:'message-1',content:'  Primeiro pedido  '}),[
+  {id:'assistant-1',author:'agent',text:'Como posso ajudar?'},
+  {id:'message-1',author:'user',text:'Primeiro pedido'},
+ ]);
+ assert.deepEqual(acceptedMessagesAfterSend([
+  {id:'message-1',author:'user',text:'Primeiro pedido'},
+ ],{id:'message-1',content:'Primeiro pedido'}),[
+  {id:'message-1',author:'user',text:'Primeiro pedido'},
+ ]);
+ assert.deepEqual(current,[{id:'assistant-1',author:'agent',text:'Como posso ajudar?'}]);
 });
 test('cancel response updates the bot captured before the request',()=>{
  const runs=runAfterRequest({botB:{id:'run-b'}},'botA',{id:'run-a-cancelled'});
