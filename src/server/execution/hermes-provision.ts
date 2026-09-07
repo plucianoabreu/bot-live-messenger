@@ -50,9 +50,12 @@ export async function installHermesImage(machine: HermesMachine) {
   await machine.run('install -d -o root -g root -m 700 /opt/blm-hermes-secrets');
   await machine.run('apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq python3-venv git ca-certificates');
   await machine.run('python3 -m venv /opt/blm-bootstrap && /opt/blm-bootstrap/bin/pip install uv==0.9.26');
+  await machine.run('install -d -o root -g root -m 755 /opt/blm-python');
+  await machine.run('UV_PYTHON_INSTALL_DIR=/opt/blm-python /opt/blm-bootstrap/bin/uv python install 3.11 --managed-python');
   await machine.run(`git clone https://github.com/NousResearch/hermes-agent.git /opt/blm-hermes && git -C /opt/blm-hermes checkout --detach ${HERMES_REVISION}`);
-  await machine.run('cd /opt/blm-hermes && /opt/blm-bootstrap/bin/uv sync --frozen --no-dev --extra messaging --python 3.11');
-  await machine.run('chown -R root:root /opt/blm-hermes /opt/blm-bootstrap && chmod -R a+rX /opt/blm-hermes /opt/blm-bootstrap && chmod -R go-w /opt/blm-hermes /opt/blm-bootstrap');
+  await machine.run('managed_python="$(UV_PYTHON_INSTALL_DIR=/opt/blm-python /opt/blm-bootstrap/bin/uv python find 3.11 --managed-python)" && case "$managed_python" in /opt/blm-python/*) ;; *) exit 1 ;; esac && cd /opt/blm-hermes && UV_PYTHON_INSTALL_DIR=/opt/blm-python /opt/blm-bootstrap/bin/uv sync --frozen --no-dev --extra messaging --python "$managed_python"');
+  await machine.run('chown -R root:root /opt/blm-hermes /opt/blm-bootstrap /opt/blm-python && chmod -R a+rX /opt/blm-hermes /opt/blm-bootstrap /opt/blm-python && chmod -R go-w /opt/blm-hermes /opt/blm-bootstrap /opt/blm-python');
+  await machine.run('resolved_python="$(readlink -f /opt/blm-hermes/.venv/bin/python)" && case "$resolved_python" in /opt/blm-python/*) ;; *) exit 1 ;; esac && runuser -u blm-hermes -- /opt/blm-hermes/.venv/bin/python -c "import sys; assert sys.version_info[:2] == (3, 11)" && runuser -u blm-hermes -- sh -c "test ! -w /opt/blm-python && test ! -w /opt/blm-hermes && test ! -w /opt/blm-bootstrap"');
 }
 
 /** Call only while holding the account provisioning lease. Persist returned binding server-side. */
