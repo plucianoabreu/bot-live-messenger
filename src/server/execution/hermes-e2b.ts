@@ -1,7 +1,7 @@
 import { isIP } from 'node:net';
 import { Sandbox } from '@e2b/desktop';
 import { z } from 'zod';
-import type { HermesMachine, HermesMachineFactory } from './hermes-provision';
+import { sanitizeHermesDiagnostic, type HermesMachine, type HermesMachineFactory } from './hermes-provision';
 
 export type HermesNetworkPolicy = {
   version: string;
@@ -12,7 +12,9 @@ type E2BSandbox = {
   sandboxId: string;
   trafficAccessToken?: string;
   files: { write(path: string, contents: string, options: { user: string }): Promise<unknown> };
-  commands: { run(command: string, options: Record<string, unknown>): Promise<{ exitCode: number }> };
+  commands: { run(command: string, options: Record<string, unknown>): Promise<{
+    exitCode: number; stdout?: string; stderr?: string;
+  }> };
   getHost(port: number): string;
   getInfo(): Promise<{ network?: { allowOut?: string[]; denyOut?: string[]; allowPublicTraffic?: boolean } }>;
   updateNetwork(network: { allowOut: string[]; denyOut: string[] }): Promise<void>;
@@ -139,6 +141,13 @@ export class HermesE2BFactory implements HermesMachineFactory {
       },
       async start(command) {
         await sandbox.commands.run(command, { user: 'root', background: true, timeoutMs: 0 });
+      },
+      async diagnose() {
+        const result = await sandbox.commands.run(
+          "sh -lc 'tail -n 80 /opt/blm-hermes-state/gateway.log 2>&1 || true'",
+          { user: 'root', timeoutMs: 10_000 },
+        );
+        return sanitizeHermesDiagnostic(`${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim());
       },
       endpoint(port) { return `https://${sandbox.getHost(port)}`; },
       async destroy() { await sandbox.kill(); },

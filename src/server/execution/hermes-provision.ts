@@ -3,6 +3,30 @@ import { z } from 'zod';
 
 export const HERMES_REVISION = '233757037df1f03f9fe1cfddc097acd5ad7f7510';
 
+export type HermesProvisionStage =
+  | 'revision' | 'identity' | 'config' | 'credentials' | 'launcher' | 'start' | 'readiness';
+
+export class HermesProvisionError extends Error {
+  readonly name = 'HermesProvisionError';
+
+  constructor(
+    readonly stage: HermesProvisionStage,
+    readonly diagnostic?: string,
+  ) {
+    super(`HERMES_PROVISION_FAILED:${stage}`);
+  }
+}
+
+/** Removes likely credentials before a diagnostic leaves the provider boundary. */
+export function sanitizeHermesDiagnostic(input: string) {
+  return input
+    .replace(/[^\x09\x0a\x0d\x20-\x7e]/g, '')
+    .replace(/((?:api[_-]?key|token|secret|password)\s*[:=]\s*)[^\s,]+/gi, '$1[REDACTED]')
+    .replace(/(bearer\s+)[^\s]+/gi, '$1[REDACTED]')
+    .replace(/[A-Za-z0-9._~-]{32,}/g, '[REDACTED]')
+    .slice(-4_000);
+}
+
 /** Infrastructure boundary. The provider must create one isolated machine, not a shared process. */
 export interface HermesMachine {
   id: string;
@@ -10,6 +34,7 @@ export interface HermesMachine {
   write(path: string, contents: string): Promise<void>;
   run(command: string): Promise<void>;
   start(command: string): Promise<void>;
+  diagnose?(): Promise<string>;
   endpoint(port: number): string;
   destroy(): Promise<void>;
 }
@@ -44,9 +69,12 @@ export async function provisionHermes(
   if (!modelGateway.scopedToken.trim()) throw new Error('MODEL_GATEWAY_TOKEN_MISSING');
   const machine = await factory.create(ownerId);
   const apiKey = randomBytes(32).toString('hex');
+  let stage: HermesProvisionStage = 'revision';
   try {
     await machine.run(`test "$(git -C /opt/blm-hermes rev-parse HEAD)" = '${HERMES_REVISION}'`);
+    stage = 'identity';
     await machine.run('test "$(id -u blm-hermes)" -ne 0 && install -d -o root -g root -m 700 /opt/blm-hermes-secrets');
+    stage = 'config';
     await machine.write('/opt/blm-hermes-state/config.yaml', [
       'model:', '  provider: openai-api', '  api_mode: chat_completions', '  streaming: false',
       'agent:', '  max_turns: 8', '  run_budget_seconds: 80',
@@ -55,6 +83,7 @@ export async function provisionHermes(
       'platform_toolsets:', '  api_server: [file]', '',
     ].join('\n'));
     // Only an account-scoped proxy token enters the runtime, never the provider or Supabase key.
+    stage = 'credentials';
     await machine.write('/opt/blm-hermes-secrets/launch.json', JSON.stringify({
       HERMES_HOME: '/opt/blm-hermes-state', API_SERVER_KEY: apiKey, API_SERVER_ENABLED: 'true',
       API_SERVER_HOST: '0.0.0.0', API_SERVER_PORT: '8642',
@@ -62,6 +91,7 @@ export async function provisionHermes(
       TERMINAL_CWD: '/workspace/shared', HERMES_WRITE_SAFE_ROOT: '/workspace', HOME: '/workspace',
     }));
     await machine.run('chown root:root /opt/blm-hermes-secrets/launch.json && chmod 600 /opt/blm-hermes-secrets/launch.json');
+    stage = 'launcher';
     await machine.write('/opt/blm-hermes-launch.py', [
       'import json, os, pwd',
       'with open("/opt/blm-hermes-secrets/launch.json", encoding="utf-8") as f:',
@@ -76,8 +106,10 @@ export async function provisionHermes(
       '',
     ].join('\n'));
     await machine.run('chown root:root /opt/blm-hermes-launch.py && chmod 700 /opt/blm-hermes-launch.py');
+    stage = 'start';
     await machine.start('umask 077 && python3 /opt/blm-hermes-launch.py > /opt/blm-hermes-state/gateway.log 2>&1');
     // Check the local authenticated endpoint without printing the server key or response.
+    stage = 'readiness';
     await machine.write('/opt/blm-hermes-ready.py', [
       'import json, time, urllib.request',
       'with open("/opt/blm-hermes-secrets/launch.json") as f: key = json.load(f)["API_SERVER_KEY"]',
@@ -102,7 +134,12 @@ export async function provisionHermes(
       trafficAccessToken: machine.trafficAccessToken, revision: HERMES_REVISION,
     };
   } catch {
+    let diagnostic: string | undefined;
+    try {
+      const rawDiagnostic = await machine.diagnose?.();
+      diagnostic = rawDiagnostic ? sanitizeHermesDiagnostic(rawDiagnostic) : undefined;
+    } catch { /* diagnostics must not block cleanup */ }
     try { await machine.destroy(); } catch { throw new Error('HERMES_PROVISION_CLEANUP_REQUIRED'); }
-    throw new Error('HERMES_PROVISION_FAILED');
+    throw new HermesProvisionError(stage, diagnostic);
   }
 }

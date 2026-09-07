@@ -7,7 +7,13 @@ import {
   hermesRuntimeNetworkPolicy,
   type HermesE2BApi,
 } from '../src/server/execution/hermes-e2b';
-import { installHermesImage, provisionHermes, type HermesMachine } from '../src/server/execution/hermes-provision';
+import {
+  HermesProvisionError,
+  installHermesImage,
+  provisionHermes,
+  sanitizeHermesDiagnostic,
+  type HermesMachine,
+} from '../src/server/execution/hermes-provision';
 
 const ownerId = '11111111-1111-4111-8111-111111111111';
 
@@ -126,6 +132,49 @@ test('provisioning exposes only file tools and drops runtime privileges before e
   assert.match(readiness, /\/v1\/toolsets/);
   assert.match(readiness, /enabled != \{"file"\}/);
   assert.deepEqual(starts, ['umask 077 && python3 /opt/blm-hermes-launch.py > /opt/blm-hermes-state/gateway.log 2>&1']);
+});
+
+test('provisioning failure exposes a safe stage and separately sanitized gateway diagnostic', async () => {
+  const secret = 'super-secret-model-token-1234567890';
+  let destroyed = false;
+  const machine: HermesMachine = {
+    id: 'sandbox-id', trafficAccessToken: 'traffic-token',
+    async write() {},
+    async run(command) {
+      if (command === 'python3 /opt/blm-hermes-ready.py') throw new Error('HERMES_MACHINE_COMMAND_FAILED');
+    },
+    async start() {},
+    endpoint() { return 'https://8642-sandbox-id.e2b.app'; },
+    async diagnose() {
+      return `OPENAI_API_KEY=${secret}\nAuthorization: Bearer ${secret}\nRuntimeError: invalid config`;
+    },
+    async destroy() { destroyed = true; },
+  };
+
+  await assert.rejects(
+    provisionHermes({ async create() { return machine; } }, ownerId, {
+      url: 'https://gateway.example.com/v1', scopedToken: secret,
+    }),
+    error => {
+      assert.ok(error instanceof HermesProvisionError);
+      assert.equal(error.message, 'HERMES_PROVISION_FAILED:readiness');
+      assert.equal(error.stage, 'readiness');
+      assert.match(error.diagnostic ?? '', /RuntimeError: invalid config/);
+      assert.doesNotMatch(error.diagnostic ?? '', new RegExp(secret));
+      assert.match(error.diagnostic ?? '', /\[REDACTED\]/);
+      return true;
+    },
+  );
+  assert.equal(destroyed, true);
+});
+
+test('gateway diagnostic sanitizer strips credentials and control characters and bounds output', () => {
+  const diagnostic = sanitizeHermesDiagnostic(
+    `api_key = abcdefghijklmnopqrstuvwxyz123456\u0000\nBearer abcdefghijklmnopqrstuvwxyz123456\n${'x'.repeat(8_000)}`,
+  );
+  assert.doesNotMatch(diagnostic, /abcdefghijklmnopqrstuvwxyz123456/);
+  assert.doesNotMatch(diagnostic, /\u0000/);
+  assert.ok(diagnostic.length <= 4_000);
 });
 
 test('runtime sandbox rejects provider success without a private ingress token', async () => {
