@@ -32,7 +32,8 @@ The script creates a credential-free snapshot, writes its reference to the ignor
 
 Set `HERMES_ENABLED`, `HERMES_TEMPLATE_ID` and `HERMES_MODEL_GATEWAY_URL` on Trigger.
 Vercel needs `HERMES_ENABLED=true`, the existing database service credential,
-OpenAI key and model rates. The web dispatcher must use a Production Trigger key.
+OpenAI key and model rates. Set `TRIGGER_PRODUCTION_SECRET_KEY` in Vercel Production
+to switch the dispatcher without replacing the existing dev/preview key.
 Apply the `hermes_runtime` migration before activating the worker.
 
 ## Verified infrastructure

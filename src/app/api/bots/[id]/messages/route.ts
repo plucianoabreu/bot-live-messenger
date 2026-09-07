@@ -1,9 +1,11 @@
-import { tasks } from '@trigger.dev/sdk';
+import { configure, tasks } from '@trigger.dev/sdk';
 import type { chatTask } from '@/trigger/chat';
 import { requireUser, sameOrigin } from '@/server/http';
 import { messageInput, parseSequencePage } from '@/domain/runs';
 import { z } from 'zod';
 const noStore={'Cache-Control':'private, no-store, max-age=0'};
+// Production credentials can be introduced without removing the preview/dev binding.
+if(process.env.TRIGGER_PRODUCTION_SECRET_KEY)configure({secretKey:process.env.TRIGGER_PRODUCTION_SECRET_KEY});
 export async function GET(request:Request,{params}:{params:Promise<{id:string}>}) {
  const auth=await requireUser();if(auth.response)return auth.response;
  const {id}=await params;if(!z.uuid().safeParse(id).success)return Response.json({error:'Contato inválido.'},{status:400});
