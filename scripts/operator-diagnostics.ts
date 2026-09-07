@@ -14,14 +14,15 @@ if (!url || !serviceKey) {
 } else {
   const db = createClient(url, serviceKey, { auth: { persistSession: false, autoRefreshToken: false } });
   const staleBefore = new Date(Date.now() - 5 * 60_000).toISOString();
-  const [runtime, failed, active, computers, deletions] = await Promise.all([
+  const [runtime, failed, active, computers, hermes, deletions] = await Promise.all([
     db.from('runtime_config').select('runs_enabled,computer_enabled,watch_enabled').eq('singleton', true).maybeSingle(),
     db.from('runs').select('id,state,error_code,created_at,heartbeat_at').eq('state', 'FAILED').order('created_at', { ascending: false }).limit(50),
     db.from('runs').select('id,user_id,state,error_code,created_at,heartbeat_at').in('state', ['QUEUED', 'RUNNING', 'WAITING_FOR_USER']).order('created_at', { ascending: true }).limit(200),
     db.from('workspace_computers').select('user_id,state,provider_id,last_used_at').not('provider_id', 'is', null).limit(200),
+    db.from('hermes_workspaces').select('active_run,machine_id,recovery_started_at').not('active_run', 'is', null).limit(200),
     db.from('account_deletion_requests').select('id,state,last_error_code,requested_at').neq('state', 'COMPLETED').order('requested_at', { ascending: true }).limit(100),
   ]);
-  const databaseError = [runtime, failed, active, computers, deletions].some(result => Boolean(result.error));
+  const databaseError = [runtime, failed, active, computers, hermes, deletions].some(result => Boolean(result.error));
   if (databaseError) {
     console.error(JSON.stringify({ event: 'operator.runtime_diagnostics_failed', code: 'DATABASE_READ_FAILED' }));
     process.exitCode = 1;
@@ -47,8 +48,13 @@ if (!url || !serviceKey) {
       failedRuns: (failed.data ?? []).map(row => ({ id: row.id, state: row.state, errorCode: row.error_code, createdAt: row.created_at, heartbeatAt: row.heartbeat_at })),
       staleRuns,
       orphanedComputers,
+      hermesRecoveryRequired: (hermes.data ?? []).map(row => ({
+        id: row.active_run,
+        state: row.recovery_started_at ? 'RECOVERY_IN_PROGRESS' : 'RECOVERY_REQUIRED',
+        providerId: row.machine_id,
+        createdAt: row.recovery_started_at,
+      })),
       pendingAccountDeletions: (deletions.data ?? []).map(row => ({ id: row.id, state: row.state, errorCode: row.last_error_code, createdAt: row.requested_at })),
     })));
   }
 }
-

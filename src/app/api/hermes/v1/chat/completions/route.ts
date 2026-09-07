@@ -14,7 +14,7 @@ export async function POST(request: Request) {
     async reserve(hash, cost) {
       const { error } = await workerDatabase().rpc('authorize_hermes_model', { p_proxy_hash: hash, p_cost: cost });
       if (error) {
-        const reason = ['UNAUTHORIZED', 'LEASE_LOST', 'RUNTIME_DISABLED', 'BUDGET_EXCEEDED'].find(code => error.message === code);
+        const reason = ['UNAUTHORIZED', 'LEASE_LOST', 'RUNTIME_DISABLED', 'COMPUTER_DISABLED', 'BUDGET_EXCEEDED'].find(code => error.message === code);
         throw new Error(reason ? `HERMES_${reason}` : 'HERMES_DATABASE_ERROR');
       }
     },

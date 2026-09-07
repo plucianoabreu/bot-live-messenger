@@ -14,6 +14,7 @@ export type OperatorSnapshot = {
   failedRuns: DiagnosticRecord[];
   staleRuns: DiagnosticRecord[];
   orphanedComputers: DiagnosticRecord[];
+  hermesRecoveryRequired: DiagnosticRecord[];
   pendingAccountDeletions: DiagnosticRecord[];
 };
 
@@ -47,6 +48,7 @@ export function operatorDiagnosticReport(snapshot: OperatorSnapshot) {
       failedRuns: snapshot.failedRuns.length,
       staleRuns: snapshot.staleRuns.length,
       orphanedComputers: snapshot.orphanedComputers.length,
+      hermesRecoveryRequired: snapshot.hermesRecoveryRequired.length,
       pendingAccountDeletions: snapshot.pendingAccountDeletions.length,
     },
   };

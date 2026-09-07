@@ -9,12 +9,14 @@ and reserves compute from the pilot pool. Remote run IDs are persisted. Results
 return through the existing message flow. A filesystem-only pause stops every
 process while preserving files and sessions; the next run starts a fresh gateway.
 
-Only a scoped proxy token enters the VM. The OpenAI key stays in Vercel. The
-root-owned token file is outside the writable workspace, and the gateway drops to
-the dedicated `blm-hermes` OS user before starting Hermes. Each model request is
-authorized against the active run, cancellation, lease expiry and cumulative cost
-reservation. The server controls model, output limit and allowed request fields.
-Unknown outcomes retain their reservations.
+Only a run-and-execution-version-scoped proxy token enters the VM. The OpenAI key
+stays in Vercel. The root-owned token file is outside the writable workspace, and
+the gateway drops to the dedicated `blm-hermes` OS user. A resume replaces the
+previous token before the gateway starts, and the database rejects the previous
+token. Each model request is authorized against that exact run/version,
+cancellation, lease expiry, both runtime flags and cumulative cost reservation.
+The server controls model, output limit and allowed request fields. Unknown
+outcomes retain their reservations.
 
 ## Runtime boundaries
 
@@ -27,9 +29,13 @@ Unknown outcomes retain their reservations.
   `E2B_ALLOWED_HOSTS`; the model gateway hostname must be in that set.
 - E2B sandbox URLs use private ingress and require the per-sandbox traffic token.
 - Different accounts execute independently; bots in one account take turns.
-- Unexpected worker death retains the fence for operator recovery.
+- Unexpected worker death retains the fence. A later worker may clear it only
+  after the provider confirms the persisted machine is paused and the database
+  accepts the exact recovery token, run and execution version. Lease expiry alone
+  never releases or transfers the fence; an ambiguous recovery remains visible in
+  operator diagnostics.
 - Live screen streaming, vision, attachment delivery and automatic recovery of
-  abandoned fences are not implemented by this adapter.
+  a recovery attempt with an unknown pause outcome are not implemented by this adapter.
 
 ## Artifact delivery and deletion
 
@@ -69,7 +75,8 @@ machines is a separate operator-authorized cleanup action.
 Vercel needs `HERMES_ENABLED=true`, the existing database service credential,
 OpenAI key and model rates. Set `TRIGGER_PRODUCTION_SECRET_KEY` in Vercel Production
 to switch the dispatcher without replacing the existing dev/preview key.
-Apply the `hermes_runtime` migration before activating the worker.
+Apply every migration in filename order, including `hermes_runtime` and
+`hermes_security_recovery`, before activating the worker.
 
 ## Local verification and required E2B proof
 
@@ -94,8 +101,9 @@ Before activation, record sanitized evidence from a newly built E2B snapshot tha
    for operator recovery.
 
 The previously recorded snapshot/readiness smoke predates these controls and is not
-evidence for this security revision. No paid E2B call or external cleanup was run as
-part of the local change.
+evidence for this security revision. The security/recovery migration remains a
+deployment gate; hosted end-to-end activation is a separate release check. No
+paid E2B call or external cleanup was run as part of the local change.
 
 ## References
 

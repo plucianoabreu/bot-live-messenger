@@ -30,6 +30,16 @@ test('gateway never calls model after quota failure and sanitizes errors', async
   assert.equal(response.status, 403); assert.ok(!(await response.text()).includes('private provider data'));
 });
 
+test('gateway preserves the bounded computer-disabled reason without calling the model', async () => {
+  const response = await handleHermesModel(request(message), {
+    model: 'model', inputRate: 1, outputRate: 1,
+    async reserve() { throw new Error('HERMES_COMPUTER_DISABLED'); },
+    async complete() { assert.fail('must not call provider'); },
+  });
+  assert.equal(response.status, 403);
+  assert.equal((await response.json() as { error: { code: string } }).error.code, 'HERMES_COMPUTER_DISABLED');
+});
+
 test('gateway rejects remote images, invalid tokens and streaming before spending', async () => {
   const deps = { model: 'model', inputRate: 1, outputRate: 1,
     async reserve() { assert.fail('must not reserve'); }, async complete() { assert.fail('must not complete'); } };
