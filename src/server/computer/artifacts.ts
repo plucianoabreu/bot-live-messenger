@@ -37,6 +37,20 @@ export interface ArtifactRepository {
   findOwned(ownerId: string, artifactId: string): Promise<(ArtifactMetadata & { objectPath: string }) | null>;
 }
 
+export type PersistExportedArtifactInput = {
+  ownerId: string;
+  runId: string;
+  finalOutputKey: string;
+  relativePath: string;
+  exported: Awaited<ReturnType<ComputerProvider['readExport']>>;
+  executionVersion: number;
+  resourceKey: string;
+  fencingToken: number;
+  policy: WorkspacePolicy;
+  store: PrivateArtifactStore;
+  repository: ArtifactRepository;
+};
+
 function safeFileName(filePath: string) {
   const name = path.posix.basename(filePath).normalize('NFC').replace(/[\u0000-\u001f\u007f]/g, '').slice(0, 180);
   if (!name || name === '.' || name === '..') throw new ComputerFoundationError('ARTIFACT_INVALID');
@@ -49,23 +63,10 @@ function safeMimeType(value: string) {
     : 'application/octet-stream';
 }
 
-export async function exportArtifact(input: {
-  ownerId: string;
-  runId: string;
-  finalOutputKey: string;
-  relativePath: string;
-  computer: ComputerIdentity;
-  provider: ComputerProvider;
-  lease: ResourceLease;
-  leases: ResourceLeaseManager;
-  authorizer: ComputerOperationAuthorizer;
-  policy: WorkspacePolicy;
-  store: PrivateArtifactStore;
-  repository: ArtifactRepository;
-}) {
+export async function persistExportedArtifact(input: PersistExportedArtifactInput) {
   const normalizedPath = normalizeExportPath(input.relativePath, input.policy);
-  const session = new FencedComputerSession(input.provider, input.computer, input.lease, input.leases, input.authorizer);
-  const exported = validateExportedFile(await session.readExport(normalizedPath), input.relativePath, input.policy);
+  if (input.resourceKey !== `file:${normalizedPath}`) throw new ComputerFoundationError('LEASE_LOST');
+  const exported = validateExportedFile(input.exported, input.relativePath, input.policy);
   const checksumSha256 = createHash('sha256').update(exported.bytes).digest('hex');
   const outputKeyHash = createHash('sha256').update(input.finalOutputKey).digest('hex').slice(0, 24);
   const objectPath = `${input.ownerId}/${input.runId}/${outputKeyHash}/${checksumSha256}`;
@@ -75,9 +76,9 @@ export async function exportArtifact(input: {
     runId: input.runId,
     finalOutputKey: input.finalOutputKey,
     objectPath,
-    executionVersion: input.lease.executionVersion,
-    resourceKey: input.lease.resourceKey,
-    fencingToken: input.lease.fencingToken,
+    executionVersion: input.executionVersion,
+    resourceKey: input.resourceKey,
+    fencingToken: input.fencingToken,
     name: safeFileName(normalizedPath),
     mimeType,
     sizeBytes: exported.bytes.byteLength,
@@ -96,6 +97,38 @@ export async function exportArtifact(input: {
     try { await input.repository.reject(intent.id, uploadAttempted); } catch { /* the expiring intent is still reclaimable */ }
     throw error;
   }
+}
+
+export async function exportArtifact(input: {
+  ownerId: string;
+  runId: string;
+  finalOutputKey: string;
+  relativePath: string;
+  computer: ComputerIdentity;
+  provider: ComputerProvider;
+  lease: ResourceLease;
+  leases: ResourceLeaseManager;
+  authorizer: ComputerOperationAuthorizer;
+  policy: WorkspacePolicy;
+  store: PrivateArtifactStore;
+  repository: ArtifactRepository;
+}) {
+  const normalizedPath = normalizeExportPath(input.relativePath, input.policy);
+  const session = new FencedComputerSession(input.provider, input.computer, input.lease, input.leases, input.authorizer);
+  const exported = await session.readExport(normalizedPath);
+  return persistExportedArtifact({
+    ownerId: input.ownerId,
+    runId: input.runId,
+    finalOutputKey: input.finalOutputKey,
+    relativePath: input.relativePath,
+    exported,
+    executionVersion: input.lease.executionVersion,
+    resourceKey: input.lease.resourceKey,
+    fencingToken: input.lease.fencingToken,
+    policy: input.policy,
+    store: input.store,
+    repository: input.repository,
+  });
 }
 
 export async function downloadArtifact(ownerId: string, artifactId: string, repository: ArtifactRepository, store: PrivateArtifactStore) {

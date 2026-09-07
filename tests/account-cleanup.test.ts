@@ -9,7 +9,8 @@ const migrations = [
   '202609060001_initial', '202609060002_pilot_quotas', '202609060003_team_profiles',
   '20260906193000_chat_worker', '20260906200000_collaboration_foundation',
   '20260906210000_live_chat_updates', '20260906220000_computer_foundation',
-  '20260906230000_account_cleanup',
+  '20260906230000_account_cleanup', '20260907163853_hermes_runtime',
+  '20260907170000_hermes_artifacts_lifecycle',
 ];
 
 test('account deletion is durable, cancels work, inventories private resources and keeps a completion ledger', async () => {
@@ -36,6 +37,7 @@ test('account deletion is durable, cancels work, inventories private resources a
     const watchPath = `${A}/${watchId}/0`;
     await db.exec(`reset role;
       update public.workspace_computers set state='READY',provider_id='provider-a',template_version='v1' where user_id='${A}';
+      insert into public.hermes_workspaces(user_id,machine_id,proxy_hash) values('${A}','hermes-a','${'b'.repeat(64)}');
       insert into public.artifacts(user_id,run_id,name,object_path,mime_type,size_bytes) values('${A}','${run}','report.txt','${artifactPath}','text/plain',12);
       insert into public.watch_leases(user_id,id,run_id,expires_at) values('${A}','${watchId}','${run}',now()+interval '1 minute');
       insert into public.watch_frames(lease_id,user_id,slot,object_path,content_type,size_bytes,checksum_sha256,captured_at)
@@ -58,12 +60,12 @@ test('account deletion is durable, cancels work, inventories private resources a
     await asUser(B);
     assert.equal((await db.query<{ value: null }>('select public.get_account_deletion_request() as value')).rows[0].value, null);
     await db.exec('reset role;set role service_role;');
-    const cleanup = (await db.query<{ value: { request_id: string; user_id: string; claim_token: string; artifact_paths: string[]; watch_paths: string[]; computer_provider_id: string; artifacts_deleted: boolean } }>('select public.claim_account_deletion() as value')).rows[0].value;
+    const cleanup = (await db.query<{ value: { request_id: string; user_id: string; claim_token: string; artifact_paths: string[]; watch_paths: string[]; computer_provider_ids: string[]; artifacts_deleted: boolean } }>('select public.claim_account_deletion() as value')).rows[0].value;
     assert.equal(cleanup.request_id, requested.id);
     assert.equal(cleanup.user_id, A);
     assert.deepEqual(cleanup.artifact_paths, [artifactPath]);
     assert.deepEqual(cleanup.watch_paths, [watchPath]);
-    assert.equal(cleanup.computer_provider_id, 'provider-a');
+    assert.deepEqual(cleanup.computer_provider_ids, ['hermes-a', 'provider-a']);
     assert.equal(cleanup.artifacts_deleted, false);
     assert.equal((await db.query<{ ok: boolean }>('select public.finish_account_deletion($1) as ok', [cleanup.claim_token])).rows[0].ok, false);
     assert.equal((await db.query<{ ok: boolean }>("select public.record_account_deletion_stage($1,'WATCH_DELETED') as ok", [cleanup.claim_token])).rows[0].ok, false);
@@ -78,6 +80,7 @@ test('account deletion is durable, cancels work, inventories private resources a
       'memory_items','memory_versions','bot_groups','bot_group_memberships','root_task_budgets','bot_handoffs','handoff_source_messages']) {
       assert.equal((await db.query(`select * from public.${table}`)).rows.length, 0, `${table} should be erased`);
     }
+    assert.equal((await db.query('select * from public.hermes_workspaces')).rows.length, 0, 'hermes_workspaces should be erased');
     await db.exec('set role service_role;');
     assert.equal((await db.query<{ ok: boolean }>('select public.finish_account_deletion($1) as ok', [cleanup.claim_token])).rows[0].ok, true);
     await db.exec('reset role;');

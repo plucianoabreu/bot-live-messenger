@@ -50,7 +50,7 @@ test('account mismatch fails before the durable request', async () => {
 function cleanupDependencies(overrides: Partial<AccountCleanupDependencies> = {}) {
   const calls: string[] = [];
   const dependencies: AccountCleanupDependencies = {
-    claim: async () => ({ request_id: 'request-a', user_id: 'user-a', claim_token: 'claim-a', artifact_paths: ['user-a/run/report.txt'], watch_paths: ['user-a/watch/0'], computer_provider_id: 'computer-a', artifacts_deleted: false, watch_deleted: false, computer_destroyed: false, auth_deleted: false }),
+    claim: async () => ({ request_id: 'request-a', user_id: 'user-a', claim_token: 'claim-a', artifact_paths: ['user-a/run/report.txt'], watch_paths: ['user-a/watch/0'], computer_provider_ids: ['computer-a', 'hermes-a'], artifacts_deleted: false, watch_deleted: false, computer_destroyed: false, auth_deleted: false }),
     renew: async () => { calls.push('renew'); return true; },
     recordStage: async (_token, stage) => { calls.push(`stage:${stage}`); return true; },
     removeArtifacts: async () => { calls.push('artifacts'); },
@@ -67,7 +67,7 @@ function cleanupDependencies(overrides: Partial<AccountCleanupDependencies> = {}
 test('cleanup removes private resources and auth before recording completion', async () => {
   const { calls, dependencies } = cleanupDependencies();
   assert.deepEqual(await processOneAccountDeletion(dependencies), { processed: true, requestId: 'request-a', state: 'COMPLETED' });
-  assert.deepEqual(calls, ['renew', 'artifacts', 'stage:ARTIFACTS_DELETED', 'renew', 'frames', 'stage:WATCH_DELETED', 'renew', 'computer', 'stage:COMPUTER_DESTROYED', 'renew', 'auth', 'stage:AUTH_DELETED', 'renew', 'finish']);
+  assert.deepEqual(calls, ['renew', 'artifacts', 'stage:ARTIFACTS_DELETED', 'renew', 'frames', 'stage:WATCH_DELETED', 'renew', 'computer', 'computer', 'stage:COMPUTER_DESTROYED', 'renew', 'auth', 'stage:AUTH_DELETED', 'renew', 'finish']);
 });
 
 test('cleanup records a bounded stage code and stops after provider failure', async () => {
@@ -78,7 +78,7 @@ test('cleanup records a bounded stage code and stops after provider failure', as
 
 test('cleanup rejects a private object path outside the owner prefix', async () => {
   const { calls, dependencies } = cleanupDependencies({
-    claim: async () => ({ request_id: 'request-a', user_id: 'user-a', claim_token: 'claim-a', artifact_paths: ['user-b/file'], watch_paths: [], computer_provider_id: null, artifacts_deleted: false, watch_deleted: false, computer_destroyed: false, auth_deleted: false }),
+    claim: async () => ({ request_id: 'request-a', user_id: 'user-a', claim_token: 'claim-a', artifact_paths: ['user-b/file'], watch_paths: [], computer_provider_ids: [], artifacts_deleted: false, watch_deleted: false, computer_destroyed: false, auth_deleted: false }),
   });
   const result = await processOneAccountDeletion(dependencies);
   assert.equal(result.state, 'FAILED');
@@ -87,7 +87,7 @@ test('cleanup rejects a private object path outside the owner prefix', async () 
 
 test('durable stage receipts skip completed external effects on retry', async () => {
   const { calls, dependencies } = cleanupDependencies({
-    claim: async () => ({ request_id: 'request-a', user_id: 'user-a', claim_token: 'claim-a', artifact_paths: ['user-a/run/report.txt'], watch_paths: ['user-a/watch/0'], computer_provider_id: 'computer-a', artifacts_deleted: true, watch_deleted: true, computer_destroyed: false, auth_deleted: false }),
+    claim: async () => ({ request_id: 'request-a', user_id: 'user-a', claim_token: 'claim-a', artifact_paths: ['user-a/run/report.txt'], watch_paths: ['user-a/watch/0'], computer_provider_ids: ['computer-a', 'computer-a'], artifacts_deleted: true, watch_deleted: true, computer_destroyed: false, auth_deleted: false }),
   });
   assert.equal((await processOneAccountDeletion(dependencies)).state, 'COMPLETED');
   assert.deepEqual(calls, ['renew', 'computer', 'stage:COMPUTER_DESTROYED', 'renew', 'auth', 'stage:AUTH_DELETED', 'renew', 'finish']);

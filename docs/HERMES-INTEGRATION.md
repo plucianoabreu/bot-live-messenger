@@ -24,6 +24,23 @@ request fields. Unknown outcomes retain their reservations.
 - Live screen streaming, vision, attachment delivery and automatic recovery of
   abandoned fences are not implemented by this adapter.
 
+## Artifact delivery and deletion
+
+Hermes outputs are eligible for delivery only from `/workspace/exports`. The
+worker must authorize the exact normalized path against the current account/run
+fence, read without following symlinks, enforce the configured byte limit, then
+copy the bytes to the private artifact bucket. Delivery metadata includes the
+run, filename, MIME type, byte size and SHA-256 checksum; the database announces
+the artifact only after Storage upload and a second current-fence check.
+
+The reusable export seam is implemented in `src/server/computer/hermes-artifacts.ts`.
+The Hermes executor still needs to call it before clearing `active_run`; this
+change does not claim attachment delivery is enabled in hosted execution.
+
+Account cleanup now inventories both provider-neutral computers and
+`hermes_workspaces`, destroys every distinct machine before Auth deletion, and
+uses cascading foreign keys only after the tracked destruction receipt exists.
+
 ## Provisioning
 
 Run `node --env-file=.env.local --import tsx scripts/build-hermes-image.ts`.

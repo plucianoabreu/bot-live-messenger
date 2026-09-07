@@ -6,6 +6,7 @@ import type { ComputerOperationAuthorizer } from './session';
 import { verifyPrivateStorageBucket } from './storage-policy';
 import type { LeaseRequest, ResourceLease, ResourceLeaseRepository } from './resources';
 import type { WatchCaptureAuthorizer } from './watch';
+import type { HermesArtifactAuthorizer } from './hermes-artifacts';
 
 type WorkerDatabase = ReturnType<typeof workerDatabase>;
 
@@ -107,6 +108,46 @@ export function databaseArtifactRepository(db: WorkerDatabase = workerDatabase()
       if (error || !data || !data.checksum_sha256) return null;
       return { id: data.id, ownerId: data.user_id, runId: data.run_id, name: data.name, mimeType: data.mime_type,
         sizeBytes: Number(data.size_bytes), checksumSha256: data.checksum_sha256, createdAt: new Date(data.created_at), objectPath: data.object_path };
+    },
+  };
+}
+
+export function databaseHermesArtifactRepository(db: WorkerDatabase = workerDatabase()): ArtifactRepository {
+  const repository = databaseArtifactRepository(db);
+  return {
+    ...repository,
+    reserve: async (input: ArtifactIntentInput) => {
+      const exportPath = input.resourceKey.startsWith('file:') ? input.resourceKey.slice('file:'.length) : '';
+      const { data, error } = await db.rpc('reserve_hermes_artifact_upload', {
+        p_run_id: input.runId,
+        p_run_version: input.executionVersion,
+        p_export_path: exportPath,
+        p_final_output_key: input.finalOutputKey,
+        p_name: input.name,
+        p_object_path: input.objectPath,
+        p_mime_type: input.mimeType,
+        p_size_bytes: input.sizeBytes,
+        p_checksum_sha256: input.checksumSha256,
+      });
+      if (error || !data) throw new ComputerFoundationError(error?.message.includes('LEASE_LOST') ? 'LEASE_LOST' : 'ARTIFACT_INVALID');
+      return { id: data as string };
+    },
+  };
+}
+
+export function databaseHermesArtifactAuthorizer(db: WorkerDatabase = workerDatabase()): HermesArtifactAuthorizer {
+  return {
+    authorize: async input => {
+      const { data, error } = await db.rpc('authorize_hermes_artifact_export', {
+        p_user_id: input.ownerId,
+        p_run_id: input.runId,
+        p_run_version: input.executionVersion,
+        p_export_path: input.exportPath,
+      });
+      if (error || !data || typeof data !== 'object' || !('machine_id' in data)) {
+        throw new ComputerFoundationError('LEASE_LOST');
+      }
+      return { machineId: String(data.machine_id) };
     },
   };
 }
