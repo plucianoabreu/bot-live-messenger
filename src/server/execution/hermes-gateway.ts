@@ -53,8 +53,10 @@ export async function handleHermesModel(request: Request, deps: HermesGatewayDep
     stage = 'provider';
     const result = await deps.complete(body, AbortSignal.any([request.signal, AbortSignal.timeout(60_000)]));
     return Response.json(result, { headers: { 'Cache-Control': 'no-store' } });
-  } catch {
-    console.error('HERMES_GATEWAY_REJECTED', stage);
-    return Response.json({ error: { code: `HERMES_${stage.toUpperCase()}_FAILED`, message: 'Execution unavailable or task limit reached' } }, { status: 403 });
+  } catch (error) {
+    const allowed = ['HERMES_UNAUTHORIZED', 'HERMES_LEASE_LOST', 'HERMES_RUNTIME_DISABLED', 'HERMES_BUDGET_EXCEEDED', 'HERMES_DATABASE_ERROR', 'WORKER_DATABASE_NOT_CONFIGURED'];
+    const code = error instanceof Error && allowed.includes(error.message) ? error.message : `HERMES_${stage.toUpperCase()}_FAILED`;
+    console.error('HERMES_GATEWAY_REJECTED', code);
+    return Response.json({ error: { code, message: 'Execution unavailable or task limit reached' } }, { status: 403 });
   }
 }

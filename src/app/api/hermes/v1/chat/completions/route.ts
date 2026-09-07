@@ -12,7 +12,10 @@ export async function POST(request: Request) {
     outputRate: Number(process.env.OPENAI_OUTPUT_MICROS_PER_TOKEN),
     async reserve(hash, cost) {
       const { error } = await workerDatabase().rpc('authorize_hermes_model', { p_proxy_hash: hash, p_cost: cost });
-      if (error) throw new Error('MODEL_NOT_AUTHORIZED');
+      if (error) {
+        const reason = ['UNAUTHORIZED', 'LEASE_LOST', 'RUNTIME_DISABLED', 'BUDGET_EXCEEDED'].find(code => error.message === code);
+        throw new Error(reason ? `HERMES_${reason}` : 'HERMES_DATABASE_ERROR');
+      }
     },
     async complete(body, signal) {
       if (!process.env.OPENAI_API_KEY) throw new Error('MODEL_UNAVAILABLE');
