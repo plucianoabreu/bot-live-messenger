@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Sandbox } from '@e2b/desktop';
 import { HermesE2BFactory, connectHermesE2B } from '../src/server/execution/hermes-e2b';
@@ -107,7 +107,7 @@ async function main() {
     const binding = await provisionHermes(
       new HermesE2BFactory(apiKey, image.snapshotId, MAX_SANDBOX_MS, policy, api),
       randomUUID(),
-      { url: 'https://pypi.org/v1', scopedToken: 'non-provider-live-proof-token' },
+      { url: 'https://pypi.org/v1', scopedToken: randomBytes(32).toString('hex') },
     );
     check(sandbox, 'sandbox_created');
     const info = await sandbox.getInfo();
