@@ -6,6 +6,7 @@ export const maxDuration = 60;
 
 export async function POST(request: Request) {
   if (process.env.HERMES_ENABLED !== 'true') return new Response(null, { status: 503 });
+  if (!process.env.OPENAI_API_KEY?.trim()) return Response.json({ error: { code: 'OPENAI_KEY_MISSING', message: 'AI configuration unavailable' } }, { status: 503 });
   return handleHermesModel(request, {
     model: process.env.OPENAI_MODEL ?? '',
     inputRate: Number(process.env.OPENAI_INPUT_MICROS_PER_TOKEN),
