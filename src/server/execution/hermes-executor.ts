@@ -5,10 +5,14 @@ import { workerDatabase } from './database';
 import { HermesClient } from './hermes';
 import { HermesE2BFactory } from './hermes-e2b';
 import { provisionHermes } from './hermes-provision';
+import { exportHermesArtifact } from '../computer/hermes-artifacts';
+import { databaseHermesArtifactAuthorizer, databaseHermesArtifactRepository, privateArtifactStore } from '../computer/database';
+import { defaultWorkspacePolicy } from '../computer/policy';
 
 export async function executeHermes(input: {
   runId: string; version: number; ownerId: string; botId: string;
   instructions: string; message: string; model: string; signal: AbortSignal;
+  exportPath?: string;
 }) {
   const key = process.env.E2B_API_KEY;
   const template = process.env.HERMES_TEMPLATE_ID;
@@ -52,6 +56,25 @@ export async function executeHermes(input: {
       if (['completed', 'failed', 'cancelled'].includes(state.status)) {
         terminal = true;
         if (state.status !== 'completed' || !state.output?.trim() || !state.usage) throw new Error('HERMES_RUN_FAILED');
+        if (input.exportPath) {
+          const exportDb = workerDatabase();
+          const bucket = process.env.ARTIFACT_BUCKET;
+          if (!bucket) throw new Error('ARTIFACT_STORE_NOT_CONFIGURED');
+          const sandbox = await Sandbox.connect(machineId!, { apiKey: key, timeoutMs: 120_000 });
+          await exportHermesArtifact({
+            ownerId: input.ownerId, runId: input.runId, executionVersion: input.version,
+            finalOutputKey: remote, relativePath: input.exportPath, policy: defaultWorkspacePolicy,
+            authorizer: databaseHermesArtifactAuthorizer(exportDb),
+            reader: { readExport: async request => {
+              const command = `set -eu; test ! -L ${JSON.stringify(request.path)}; test -f ${JSON.stringify(request.path)}; realpath --no-symlinks ${JSON.stringify(request.path)} | grep -Fx ${JSON.stringify(request.path)} >/dev/null; size=$(wc -c < ${JSON.stringify(request.path)}); test "$size" -le ${request.maxBytes}; printf '%s' "$size"; base64 -w0 ${JSON.stringify(request.path)}`;
+              const result = await sandbox.commands.run(command, { user: 'root', timeoutMs: 30_000 });
+              const match = /^(\d+)([A-Za-z0-9+/=]+)$/.exec(result.stdout.trim());
+              if (!match) throw new Error('ARTIFACT_READ_FAILED');
+              return { canonicalPath: request.path, bytes: Buffer.from(match[2], 'base64'), mimeType: 'application/octet-stream', symlinkFree: true };
+            } },
+            store: privateArtifactStore(bucket, exportDb), repository: databaseHermesArtifactRepository(exportDb),
+          });
+        }
         return { text: state.output, providerResponseId: remote, usage: state.usage };
       }
       await delay(1000, undefined, { signal: input.signal });
