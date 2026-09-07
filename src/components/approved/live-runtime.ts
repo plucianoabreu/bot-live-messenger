@@ -21,6 +21,11 @@ export function acceptedMessagesAfterSend<T extends TranscriptMessage>(messages:
  return [...messages,{id:accepted.id,author:'user' as const,text:accepted.content.trim()}];
 }
 
+type V1ExcludedFeature = 'conversation-export' | 'watch' | 'groups' | 'delegation';
+export function v1VisibleMenuItems<T extends {v1Feature?:V1ExcludedFeature}>(items:readonly T[]) {
+ return items.filter(item=>!item.v1Feature);
+}
+
 export function liveEntryState(alreadyEntered:boolean,mainWindowHidden:boolean) {
  return {entered:true,mainWindowHidden:alreadyEntered?mainWindowHidden:false,showOnboarding:!alreadyEntered};
 }

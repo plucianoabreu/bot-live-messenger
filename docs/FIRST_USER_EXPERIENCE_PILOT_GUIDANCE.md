@@ -2,6 +2,10 @@
 
 Snapshot reviewed: `cf3a6bddc1735de4cab68c0386ab9b2dfc1647a2`.
 
+## V1 surface
+
+V1 presents direct bot conversations and bot customization. It does not present conversation export, computer Watch, groups, or bot-to-bot delegation. File download controls remain available when a generated file has been delivered. The UI and this guide make no claim that Hermes computer execution is pilot-ready.
+
 ## Implemented in this clone
 
 1. **No silent dead-end when live runs are disabled.** The composer is explicitly unavailable and the conversation notice tells the user that real tasks are not enabled for the account and that the local demo is the available path.
@@ -17,6 +21,7 @@ Snapshot reviewed: `cf3a6bddc1735de4cab68c0386ab9b2dfc1647a2`.
 - Keep the authenticated pilot demo-only while runtime admission is disabled; do not invite users to test real chat until the runtime gate is verified open.
 - Tell each tester that the account allowance is five chat tasks. Ask them to capture the exact on-screen message if admission is refused.
 - Treat `WORKSPACE_LOAD_FAILED` as a retryable workspace-load report; it does not identify the underlying service failure.
+- Do not describe computer monitoring, groups, delegation, or conversation export as V1 capabilities.
 
 ## Remaining backend contract
 

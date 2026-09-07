@@ -3,7 +3,7 @@
 import { presence } from '../../domain/bots';
 import { displayPictures, defaultPicture, pictureUrl, botProfileInput } from '../../domain/profiles';
 import { isActiveRun } from '../../domain/runs';
-import { acceptedMessagesAfterSend, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest } from './live-runtime';
+import { acceptedMessagesAfterSend, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
 import {
  activeMemoryVersion,collaborationStorageMode,createGenerationGate,groupFromApi,handoffLabel,handoffsForBot,
  reconcileMembershipChanges,sourceMessagesForHandoff,
@@ -18,29 +18,25 @@ export function writeWelcomePreference(storage,{live,userId},open) {
  if(!live||!userId)return;
  try{storage.setItem(welcomePreferenceKey(userId),open?'open':'closed');}catch{/* Presentation preferences are optional when storage is unavailable. */}
 }
-export function welcomeDocumentState({live=false,runsEnabled=false,watchAvailable=false}={}) {
- const tracking=watchAvailable
-  ? '5. Acompanhe o andamento na conversa e o computador em Acompanhar.'
-  : live&&runsEnabled
-   ? '5. Acompanhe o andamento na conversa. Acompanhar o computador ainda não está disponível.'
-   : live
-    ? '5. Acompanhe o andamento na conversa. As tarefas e o computador ainda estão em preparação.'
-    : '5. Acompanhe o andamento na conversa. O computador não faz parte da demonstração.';
- const controls=live&&!runsEnabled
-  ? '6. Quando as tarefas forem habilitadas, você poderá usar Parar.\n7. Os arquivos entregues poderão ser baixados pela conversa.'
+export function welcomeDocumentState({live=false,runsEnabled=false}={}) {
+ const tracking=live&&runsEnabled
+  ? '4. Confira o andamento na conversa.'
   : live
-   ? '6. Use Parar quando quiser interromper uma tarefa.\n7. Confira a resposta e baixe os arquivos entregues.'
-   : '6. Use Parar para interromper uma tarefa simulada.\n7. Confira a resposta simulada na conversa.';
+   ? '4. As tarefas reais ainda estão em preparação.'
+   : '4. Confira a resposta simulada na conversa.';
+ const controls=live&&!runsEnabled
+  ? '5. Quando as tarefas forem habilitadas, você poderá usar Parar.\n6. Quando houver um arquivo entregue, baixe pela conversa.'
+  : live
+   ? '5. Use Parar quando quiser interromper uma tarefa.\n6. Quando houver um arquivo entregue, baixe pela conversa.'
+   : '5. Use Parar para interromper uma tarefa simulada.\n6. Confira a resposta simulada na conversa.';
  const context=live
-  ? '8. Volte à conversa para continuar: seus bots guardam o contexto.'
-  : '8. Volte à conversa para continuar enquanto esta demonstração estiver aberta.';
+  ? '7. Volte à conversa para continuar com o histórico salvo.'
+  : '7. Volte à conversa para continuar enquanto esta demonstração estiver aberta.';
  const disclosure=!live
   ? 'Demonstração local: conversas e tarefas são simuladas; nenhum trabalho é executado no computador.'
-  : watchAvailable
-   ? 'Conta conectada: conversas, tarefas e Acompanhar estão disponíveis.'
-   : runsEnabled
-    ? 'Conta conectada: conversas e tarefas estão disponíveis; Acompanhar ainda não está disponível.'
-    : 'Conta conectada: conversas salvas; tarefas e Acompanhar ainda estão em preparação.';
+  : runsEnabled
+   ? 'Conta conectada: conversas e tarefas estão disponíveis.'
+   : 'Conta conectada: conversas salvas; tarefas ainda estão em preparação.';
  const availability=live&&!runsEnabled
   ? '\n\nMODO ATUAL\nAs tarefas reais ainda não estão disponíveis nesta conta. Para testar uma conversa agora, saia e escolha a demonstração local.'
   : live
@@ -52,7 +48,6 @@ ${availability}
 1. Escolha um bot na lista e abra a conversa.
 2. Diga o que você precisa e como quer receber o resultado.
 3. Para criar um bot, clique em Adicionar bot e defina sua função.
-4. Crie um grupo para os bots trabalharem juntos.
 ${tracking}
 ${controls}
 ${context}
@@ -72,6 +67,15 @@ export function prepareWelcomeMarkup(markup,live=false) {
  if(!prepared.includes('id="welcome-mode-disclosure"'))prepared=prepared.replace('<textarea id="welcome-text"',
   `<div id="welcome-mode-disclosure" class="welcome-mode-disclosure" role="status" aria-live="polite">${disclosure}</div><textarea id="welcome-text"`);
  return prepared;
+}
+export function prepareV1Markup(markup) {
+ return markup
+  .replace(/<button\b[^>]*data-command="history"[^>]*>[\s\S]*?<\/button>/g,'')
+  .replace('• Bots que colaboram e compartilham contexto.\n','')
+  .replace('• Um computador na nuvem para seus bots.\n','')
+  .replace('• Pesquisa em sites e trabalho com arquivos.\n','')
+  .replace('• Relatórios, planilhas e apresentações.\n','')
+  .replace('3. Acompanhe o trabalho na conversa.','3. Confira a resposta na conversa.');
 }
 export function mountMessenger(host, initialOptions = {}) {
 let options=initialOptions;
@@ -152,7 +156,6 @@ function contactGroups() {
   return [
     {id:'favorites',name:'Favoritos',ids:agents.filter(a => isFavorite(a.id)).map(a => a.id)},
     {id:'agents',name:'Bots',ids:agents.filter(a => a.status !== 'offline').map(a => a.id)},
-    ...state.customGroups,
     ...(state.showOffline ? [{id:'offline',name:'Offline',ids:agents.filter(a => a.status === 'offline').map(a => a.id)}] : [])
   ];
 }
@@ -382,7 +385,7 @@ function closeMenu() {
 }
 function showMenu(anchor,items,point) {
   closeMenu(); menuAnchor = anchor; menuActions = [];
-  $('popup-menu').innerHTML = items.map(item => {
+  $('popup-menu').innerHTML = v1VisibleMenuItems(items).map(item => {
     if (item.separator) return '<div class="menu-separator" role="separator"></div>';
     if (item.caption) return `<div class="menu-caption">${escapeHTML(item.caption)}</div>`;
     const index = menuActions.push(item.action) - 1;
@@ -420,10 +423,10 @@ function contactMenu(id,anchor,point) {
     {label:'Editar instruções...',action:() => openInstructions(id)},
     {label:'Ver perfil...',action:() => openAgentDetails(id)},
     {label:'Ver memória...',action:() => openMemoryDialog(id)},
-    {label:options.live?'Ver delegações...':'Ver atividade...',action:() => options.live?openHandoffs(id):openActivity(id)},
+    {label:'Ver atividade...',action:() => openActivity(id)},
     {separator:true},
     {label:agent.status==='offline'?'Conectar bot':'Desconectar bot',disabled:state.jobs.has(id),action:() => toggleConnection(id)},
-    {label:'Mover para um grupo...',action:() => openGroupAssignment(id)}
+    {label:'Mover para um grupo...',v1Feature:'groups',action:() => openGroupAssignment(id)}
   ],point);
 }
 function toggleFavorite(id) {
@@ -674,7 +677,7 @@ const commands={
   'advertise':()=>openDialog('Anuncie no Bot Live Messenger','<h2>Sua marca nesta conversa.</h2><p>Este espaço está reservado para publicidade e parcerias.</p><p>Prévia do posicionamento. Nenhum anúncio de terceiros está sendo carregado.</p>',null),
   'settings':openSettings,'add-agent':openAddAgent,'create-group':openCreateGroup,'manage-groups':openManageGroups,
   'appearance':openAppearance,'activity':()=>openActivity(),
-  'agent-activity':()=>options.live?openHandoffs(state.active):openActivity(state.active),'history':openHistory,
+  'agent-activity':()=>openActivity(state.active),'history':openHistory,
   'memory':()=>openMemoryDialog(state.active),'saved-memories':()=>openMemoryDialog(),
   'instructions':()=>openInstructions(state.active),'agent-details':()=>openAgentDetails(state.active),
   'favorite':()=>toggleFavorite(state.active),'connect':()=>toggleConnection(state.active),
@@ -692,7 +695,7 @@ host.addEventListener('click',event=>{
   const menu=event.target.closest('[data-menu]');
   if(menu){
     if(menu.dataset.menu==='view')viewMenu(menu);
-    if(menu.dataset.menu==='contacts')showMenu(menu,[{label:'Adicionar um bot...',icon:'+',action:openAddAgent},{label:'Criar grupo...',action:openCreateGroup},{label:'Gerenciar grupos...',action:openManageGroups},{label:'Memórias salvas...',action:()=>openMemoryDialog()},{separator:true},{label:'Iniciar uma conversa...',action:openContactPicker}]);
+    if(menu.dataset.menu==='contacts')showMenu(menu,[{label:'Adicionar um bot...',icon:'+',action:openAddAgent},{label:'Criar grupo...',v1Feature:'groups',action:openCreateGroup},{label:'Gerenciar grupos...',v1Feature:'groups',action:openManageGroups},{label:'Memórias salvas...',action:()=>openMemoryDialog()},{separator:true},{label:'Iniciar uma conversa...',action:openContactPicker}]);
     if(menu.dataset.menu==='agent')contactMenu(state.active,menu);
     return;
   }
@@ -816,13 +819,7 @@ $('welcome-text').readOnly=true;
 let onboardingShown=false;
 let welcomeFontSize=14;
 function renderWelcomeDocument(){
- const control=host.querySelector('[data-command="watch"]');
- if(control){
-  const textNode=[...control.childNodes].reverse().find(node=>node.nodeType===Node.TEXT_NODE&&node.textContent.trim());
-  if(textNode)textNode.textContent='Acompanhar';else control.append('Acompanhar');
-  control.setAttribute('aria-label','Acompanhar o computador');
- }
- const documentState=welcomeDocumentState({live:Boolean(options.live),runsEnabled:Boolean(options.runsEnabled),watchAvailable:Boolean(options.watchEnabled&&control)});
+ const documentState=welcomeDocumentState({live:Boolean(options.live),runsEnabled:Boolean(options.runsEnabled)});
  $('welcome-text').value=documentState.guide;
  let disclosure=$('welcome-mode-disclosure');
  if(!disclosure){
@@ -1188,11 +1185,9 @@ function syncLive(){
  else renderWelcomeDocument();
  $('user-display-name').textContent=options.userName||'Você';
  $('main-window').querySelector('.statusbar-right').lastChild.textContent=options.runsEnabled?'Conectado':'Tarefas em preparação';
- host.querySelectorAll('[data-command="agent-activity"]').forEach(button=>{button.lastChild.textContent='Delegações';});
  commands.attach=unavailable;
  commands.about=()=>openDialog('Sobre o Bot Live Messenger','<h2>Bot Live Messenger</h2><p>Seus bots, na sua lista de contatos.</p><p>Suas conversas ficam salvas na sua conta. As tarefas reais são habilitadas após a configuração dos serviços.</p>',null);
  renderContacts();
- void loadGroups().catch(()=>{});
  const focused=state.active;for(const id of windows.keys()){if(agents.some(b=>b.id===id)){state.active=id;renderConversation();}}state.active=focused;
  document.title='Bot Live Messenger';
 }

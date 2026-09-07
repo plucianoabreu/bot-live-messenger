@@ -8,5 +8,6 @@ export function writeWelcomePreference(storage:WelcomeStorage,options:WelcomePre
 export function welcomeDocumentState(options?:WelcomeDocumentOptions):{mode:'live'|'demo';disclosure:string;guide:string};
 export function welcomeMenuState(options?:{selectionStart?:number;selectionEnd?:number;wrap?:boolean;fontSize?:number}):{canCopy:boolean;wrapChecked:boolean;canIncreaseFont:boolean;canDecreaseFont:boolean;defaultFont:boolean};
 export function createDesktopShortcutSelection(ids:readonly string[]):{select(id:string):string|null;isSelected(id:string):boolean;current():string|null};
+export function prepareV1Markup(markup:string):string;
 export function prepareWelcomeMarkup(markup:string,live?:boolean):string;
 export function mountMessenger(host: HTMLElement, options: RuntimeOptions): {update(options:RuntimeOptions):void;destroy():void};

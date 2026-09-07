@@ -9,6 +9,7 @@ import {
  liveComposerState,
  liveEntryState,
  runAfterRequest,
+ v1VisibleMenuItems,
 } from '../src/components/approved/live-runtime';
 
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
@@ -49,6 +50,15 @@ test('accepted send appears immediately in the local transcript',()=>{
   {id:'message-1',author:'user',text:'Primeiro pedido'},
  ]);
  assert.deepEqual(current,[{id:'assistant-1',author:'agent',text:'Como posso ajudar?'}]);
+});
+test('V1 menus omit excluded features while keeping supported actions',()=>{
+ const visible=v1VisibleMenuItems([
+  {label:'Iniciar uma conversa'},
+  {label:'Criar grupo',v1Feature:'groups' as const},
+  {label:'Ver delegações',v1Feature:'delegation' as const},
+  {label:'Memórias salvas'},
+ ]);
+ assert.deepEqual(visible.map(item=>item.label),['Iniciar uma conversa','Memórias salvas']);
 });
 test('cancel response updates the bot captured before the request',()=>{
  const runs=runAfterRequest({botB:{id:'run-b'}},'botA',{id:'run-a-cancelled'});
