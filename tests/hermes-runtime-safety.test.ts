@@ -117,6 +117,8 @@ test('provisioning exposes only file tools and drops runtime privileges before e
   const allCommands = commands.join('\n');
   assert.match(allCommands, /useradd/);
   assert.match(allCommands, /-m 700 \/opt\/blm-hermes-secrets/);
+  assert.match(allCommands, /chmod -R a\+rX \/opt\/blm-hermes \/opt\/blm-bootstrap/);
+  assert.match(allCommands, /chmod -R go-w \/opt\/blm-hermes \/opt\/blm-bootstrap/);
   assert.ok(writes.has('/opt/blm-hermes-secrets/launch.json'));
   assert.ok(!writes.has('/opt/blm-hermes-state/launch.json'));
   assert.match(writes.get('/opt/blm-hermes-state/config.yaml') ?? '', /api_server: \[file\]/);

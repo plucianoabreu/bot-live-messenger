@@ -52,7 +52,7 @@ export async function installHermesImage(machine: HermesMachine) {
   await machine.run('python3 -m venv /opt/blm-bootstrap && /opt/blm-bootstrap/bin/pip install uv==0.9.26');
   await machine.run(`git clone https://github.com/NousResearch/hermes-agent.git /opt/blm-hermes && git -C /opt/blm-hermes checkout --detach ${HERMES_REVISION}`);
   await machine.run('cd /opt/blm-hermes && /opt/blm-bootstrap/bin/uv sync --frozen --no-dev --extra messaging --python 3.11');
-  await machine.run('chown -R root:root /opt/blm-hermes /opt/blm-bootstrap && chmod -R go-w /opt/blm-hermes /opt/blm-bootstrap');
+  await machine.run('chown -R root:root /opt/blm-hermes /opt/blm-bootstrap && chmod -R a+rX /opt/blm-hermes /opt/blm-bootstrap && chmod -R go-w /opt/blm-hermes /opt/blm-bootstrap');
 }
 
 /** Call only while holding the account provisioning lease. Persist returned binding server-side. */
