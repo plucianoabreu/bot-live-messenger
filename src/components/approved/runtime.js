@@ -931,7 +931,9 @@ function ensureWindow(id){
  win.dataset.botId=id;windows.set(id,win);win.hidden=false;
  const offset=(windows.size-1)%5*24;
  const contactBounds=$('main-window').getBoundingClientRect();
- moveWindow(win,contactBounds.right+32+offset,115+offset);
+ // Wider conversation windows should still open fully inside the desktop instead
+ // of relying on a fixed left edge that can put their controls off-screen.
+ moveWindow(win,contactBounds.right+24+offset,Math.min(115+offset,Math.max(0,innerHeight-win.offsetHeight-16)));
  bringToFront(win);
 }
 function focusWindow(win){
