@@ -34,6 +34,11 @@ export function deliveredFilesForMessage(artifacts:readonly DeliveredArtifact[]|
  }));
 }
 
+export function deliveredFileMarkup(file:{name:string;size:number;href:string},formattedSize:string) {
+ const escape=(value:string)=>value.replace(/[&<>"']/g,character=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[character]!));
+ return `<a class="message-file" href="${escape(file.href)}" download><img src="/assets/folder.svg" alt=""><span><strong>${escape(file.name)}</strong><small>${escape(formattedSize)} · Baixar arquivo entregue</small></span></a>`;
+}
+
 type V1ExcludedFeature = 'conversation-export' | 'watch' | 'groups' | 'delegation';
 export function v1VisibleMenuItems<T extends {v1Feature?:V1ExcludedFeature}>(items:readonly T[]) {
  return items.filter(item=>!item.v1Feature);

@@ -14,5 +14,28 @@ export function presence(computer: ComputerState, run?: RunState, enabled = true
 }
 export const presenceLabels = {available: 'Disponível', busy: 'Ocupado', away: 'Ausente', offline: 'Offline'};
 export type Bot = {id: string; name: string; preset: string|null; description: string; role: string; instructions: string; instructions_version:number; avatar_id:string; computer_state: ComputerState; enabled: boolean; run_state?: RunState};
-export type DeliveredArtifact = {id:string;name:string;mime_type:string;size_bytes:number};
+export type DeliveredArtifact = {id:string;run_id:string;name:string;mime_type:string;size_bytes:number;delivered_at:string};
 export type Message = {id: string; sequence?: string; run_id?:string|null; role: 'user' | 'assistant' | 'system'; content: string; created_at: string; artifacts?:DeliveredArtifact[]};
+export type WorkspaceMessage = Message & {bot_id:string};
+
+export function attachDeliveredArtifacts(
+  messages:readonly WorkspaceMessage[],
+  runs:readonly {id:string;bot_id:string}[],
+  artifacts:readonly DeliveredArtifact[],
+) {
+  const artifactsByRun=new Map<string,DeliveredArtifact[]>();
+  for(const artifact of artifacts){const list=artifactsByRun.get(artifact.run_id)??[];list.push(artifact);artifactsByRun.set(artifact.run_id,list);}
+  const assistantIndexByRun=new Map<string,number>();
+  messages.forEach((message,index)=>{if(message.role==='assistant'&&message.run_id)assistantIndexByRun.set(message.run_id,index);});
+  const hydrated=messages.map((message,index)=>{
+    const delivered=message.run_id&&assistantIndexByRun.get(message.run_id)===index?artifactsByRun.get(message.run_id):undefined;
+    return delivered?.length?{...message,artifacts:delivered}:message;
+  });
+  const runsById=new Map(runs.map(run=>[run.id,run]));
+  for(const [runId,delivered] of artifactsByRun){
+    if(assistantIndexByRun.has(runId))continue;
+    const run=runsById.get(runId);if(!run)continue;
+    hydrated.push({id:`artifact-${runId}`,bot_id:run.bot_id,run_id:runId,role:'assistant',content:'Arquivo entregue.',created_at:delivered.at(-1)?.delivered_at??'',artifacts:delivered});
+  }
+  return hydrated;
+}

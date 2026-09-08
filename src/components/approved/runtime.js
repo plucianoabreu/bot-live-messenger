@@ -3,7 +3,7 @@
 import { presence } from '../../domain/bots';
 import { displayPictures, defaultPicture, pictureUrl, botProfileInput } from '../../domain/profiles';
 import { isActiveRun } from '../../domain/runs';
-import { acceptedMessagesAfterSend, connectionControlState, deliveredFilesForMessage, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
+import { acceptedMessagesAfterSend, connectionControlState, deliveredFileMarkup, deliveredFilesForMessage, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
 import {
  activeMemoryVersion,collaborationStorageMode,createGenerationGate,groupFromApi,handoffLabel,handoffsForBot,
  reconcileMembershipChanges,sourceMessagesForHandoff,
@@ -198,7 +198,7 @@ function renderConversation(scrollToEnd = false) {
   $('messages').innerHTML = messages.map(message => {
     if (message.author === 'system') return `<div class="message system"><span class="system-time">${message.time || ''}</span>${escapeHTML(message.text)}</div>`;
     return `<div class="message ${message.author}"><div class="message-author">${message.author === 'user' ? 'Você' : escapeHTML(agent.name)} diz:</div><div class="message-text ${message.bold ? 'bold' : ''}">${escapeHTML(message.text)}</div>${(message.files || []).map(file => file.href
-      ? `<a class="message-file" href="${escapeHTML(file.href)}" download><img src="/assets/folder.svg" alt=""><span><strong>${escapeHTML(file.name)}</strong><small>${prettySize(file.size)} · Baixar arquivo entregue</small></span></a>`
+      ? deliveredFileMarkup(file,prettySize(file.size))
       : `<span class="message-file"><img src="/assets/folder.svg" alt=""><span><strong>${escapeHTML(file.name)}</strong><small>${prettySize(file.size)} · Anexo local</small></span></span>`).join('')}</div>`;
   }).join('');
   if (scrollToEnd || wasAtBottom) messagePane.scrollTop = messagePane.scrollHeight;
