@@ -3,6 +3,7 @@
 import { presence } from '../../domain/bots';
 import { displayPictures, defaultPicture, pictureUrl, botProfileInput } from '../../domain/profiles';
 import { isActiveRun } from '../../domain/runs';
+import { recoverCatalogPicture } from './display-picture-picker';
 import { acceptedMessagesAfterSend, connectionControlState, deliveredFileMarkup, deliveredFilesForMessage, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
 import {
  activeMemoryVersion,collaborationStorageMode,createGenerationGate,groupFromApi,handoffLabel,handoffsForBot,
@@ -1204,7 +1205,7 @@ if(options.authConfigured){
  },'Enviar');
  host.querySelectorAll('[data-auth-info]').forEach(button=>button.onclick=()=>openDialog('Bot Live Messenger',button.dataset.authInfo==='privacy'?'<h2>Sua conta e suas conversas.</h2><p>O acesso usa autenticação segura. Conversas da sua conta ficam salvas para você continuar depois. A demonstração funciona localmente e usa dados fictícios.</p>':'<h2>Entre. Seus bots estão por aqui.</h2><p>Entre com seu e-mail e senha, crie uma conta ou experimente a demonstração local.</p>',null));
 }
-host.addEventListener('error',event=>{const img=event.target;if(img instanceof HTMLImageElement&&img.dataset.catalogPicture&&!img.dataset.fallback){img.dataset.fallback='true';img.src=portraitUrl(defaultPicture);}},{capture:true,signal:abort.signal});
+host.addEventListener('error',event=>{const img=event.target;if(img instanceof HTMLImageElement&&img.dataset.catalogPicture)recoverCatalogPicture(img,portraitUrl(defaultPicture));},{capture:true,signal:abort.signal});
 reducedMotion.addEventListener('change',()=>{host.querySelectorAll('img[data-catalog-picture]').forEach(img=>{img.src=portraitUrl(img.dataset.catalogPicture);});},{signal:abort.signal});
 if(!options.live){try{const saved=localStorage.getItem('bot-messenger.demo-picture');if(displayPictures.includes(saved))state.userAvatarId=saved;}catch{}}
 renderUserPictures();
