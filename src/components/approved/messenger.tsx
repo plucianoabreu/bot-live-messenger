@@ -29,10 +29,5 @@ export function ApprovedMessenger(props:RuntimeOptions){
   document.addEventListener('visibilitychange',visible);
   return()=>{window.clearInterval(timer);window.removeEventListener('online',refresh);window.removeEventListener('focus',refresh);document.removeEventListener('visibilitychange',visible);};
  },[props.live,props.runs,router]);
- useEffect(()=>{
-  if(!props.live)return;
-  // The server deduplicates account/tab opens. Never delay rendering or typing.
-  void fetch('/api/prewarm',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'}}).catch(()=>undefined);
- },[props.live]);
  return <div ref={host} style={{display:'contents'}} dangerouslySetInnerHTML={{__html:renderedMarkup}} suppressHydrationWarning/>;
 }
