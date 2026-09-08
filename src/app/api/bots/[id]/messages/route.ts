@@ -53,5 +53,5 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
   auth.db.from('messages').select('id').eq('run_id',data).eq('role','user').single(),
  ]);
  if(runResult.error||messageResult.error)return Response.json({error:'A tarefa foi salva, mas o estado ainda não pôde ser carregado. Tente atualizar.'},{status:500,headers:noStore});
- return Response.json({messageId:messageResult.data.id,runId:data,status:runResult.data.state,run:runResult.data},{status:202,headers:noStore});
+ return Response.json({messageId:messageResult.data.id,runId:data,status:runResult.data.state,run:{...runResult.data,started_at:null}},{status:202,headers:noStore});
 }

@@ -9,12 +9,20 @@ import {
  connectionControlState,
  deliveredFileMarkup,
  deliveredFilesForMessage,
+ draftAfterFailedSend,
  draftAfterSuccessfulSend,
+ failOptimisticMessage,
  liveComposerState,
   liveEntryState,
+ mergeLiveTranscript,
+ optimisticMessageId,
+ optimisticMessagesAfterSend,
+ reconcileOptimisticMessage,
   browserLatencyPayload,
   hasRenderedAssistantForRun,
  runAfterRequest,
+ runFailureFeedbackText,
+ thinkingIndicatorText,
  v1VisibleMenuItems,
 } from '../src/components/approved/live-runtime';
 
@@ -54,6 +62,10 @@ test('successful send clears only the exact submitted draft',()=>{
  assert.equal(draftAfterSuccessfulSend('submitted message','submitted message'),'');
  assert.equal(draftAfterSuccessfulSend('new draft typed during request','submitted message'),'new draft typed during request');
 });
+test('failed send restores its text without overwriting a newer draft',()=>{
+ assert.equal(draftAfterFailedSend('', 'submitted message'),'submitted message');
+ assert.equal(draftAfterFailedSend('new draft typed during request','submitted message'),'new draft typed during request');
+});
 test('disabled live runtime gives the composer an explicit unavailable state',()=>{
  assert.deepEqual(liveComposerState({offline:false,pending:false,live:true,runsEnabled:false}),{
   inputDisabled:true,
@@ -68,6 +80,21 @@ test('live mode omits unavailable bot connection controls while demo keeps them'
  assert.deepEqual(connectionControlState({live:false,offline:true}),{showToggle:true,showInlineConnect:true});
  assert.deepEqual(connectionControlState({live:false,offline:false}),{showToggle:true,showInlineConnect:false});
 });
+test('the activity line says thinking because RUNNING is aggregate execution state',()=>{
+ const name='AI Sócrates Strategy';
+ assert.equal(thinkingIndicatorText({live:true,name,pending:true,run:{state:'QUEUED'}}),'');
+ assert.equal(thinkingIndicatorText({live:true,name,pending:true,run:{state:'RUNNING',cancel_requested:false}}),`${name} está pensando...`);
+ assert.equal(thinkingIndicatorText({live:true,name,pending:true,run:{state:'RUNNING',cancel_requested:true}}),'');
+ assert.equal(thinkingIndicatorText({live:true,name,pending:true,run:{state:'WAITING_FOR_USER'}}),'');
+ assert.equal(thinkingIndicatorText({live:true,name,pending:false,run:{state:'SUCCEEDED'}}),'');
+ assert.equal(thinkingIndicatorText({live:false,name,pending:true}),`${name} está pensando...`);
+});
+test('only failed runs retain an actionable feedback message',()=>{
+ assert.equal(runFailureFeedbackText({state:'QUEUED'}),'');
+ assert.equal(runFailureFeedbackText({state:'WAITING_FOR_USER'}),'');
+ assert.equal(runFailureFeedbackText({state:'FAILED'}),'Não foi possível concluir a tarefa. Sua mensagem continua salva; tente novamente.');
+ assert.equal(runFailureFeedbackText({state:'CANCELLED'}),'');
+});
 test('accepted send appears immediately in the local transcript',()=>{
  const current=[{id:'assistant-1',author:'agent',text:'Como posso ajudar?'}] as const;
  assert.deepEqual(acceptedMessagesAfterSend(current,{id:'message-1',content:'  Primeiro pedido  '}),[
@@ -81,6 +108,25 @@ test('accepted send appears immediately in the local transcript',()=>{
  ]);
  assert.deepEqual(current,[{id:'assistant-1',author:'agent',text:'Como posso ajudar?'}]);
 });
+test('optimistic send reconciles exactly once and a retry retains its idempotency identity',()=>{
+ const key='11111111-1111-4111-8111-111111111111';
+ const pending=optimisticMessagesAfterSend([{id:'old',author:'agent',text:'Oi'}],{idempotencyKey:key,content:'  Primeiro pedido  '});
+ assert.equal(pending.at(-1)?.id,optimisticMessageId(key));
+ assert.equal(pending.at(-1)?.delivery,'sending');
+ const retry=optimisticMessagesAfterSend(failOptimisticMessage(pending,key),{idempotencyKey:key,content:'Primeiro pedido'});
+ assert.equal(retry.filter(message=>message.clientId===optimisticMessageId(key)).length,1);
+ assert.equal(retry.at(-1)?.delivery,'sending');
+ const reconciled=reconcileOptimisticMessage(retry,{id:'message-1',idempotencyKey:key,content:'Primeiro pedido'});
+ assert.equal(reconciled.filter(message=>message.id==='message-1').length,1);
+ assert.equal(reconciled.some(message=>message.id===optimisticMessageId(key)),false);
+ assert.deepEqual(reconcileOptimisticMessage(reconciled,{id:'message-1',idempotencyKey:key,content:'Primeiro pedido'}),reconciled);
+});
+test('authoritative refresh retains only unresolved local messages',()=>{
+ const pending={id:'optimistic:key',clientId:'optimistic:key',author:'user' as const,text:'Still sending',delivery:'sending' as const};
+ const delivered={id:'message-1',author:'user' as const,text:'Saved'};
+ assert.deepEqual(mergeLiveTranscript([delivered],[delivered,pending]),[delivered,pending]);
+ assert.deepEqual(mergeLiveTranscript([delivered],[{...pending,id:'message-1'}]),[delivered]);
+});
 test('delivered artifacts map to authenticated download links on refresh',async()=>{
  const artifactId='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
  assert.deepEqual(deliveredFilesForMessage([{id:artifactId,name:'report.pdf',size_bytes:2048}]),[
@@ -89,9 +135,15 @@ test('delivered artifacts map to authenticated download links on refresh',async(
  assert.deepEqual(deliveredFilesForMessage(undefined),[]);
  const page=await readFile(new URL('../src/app/messenger/page.tsx',import.meta.url),'utf8');
  assert.match(page,/from\('artifacts'\).*\.in\('run_id',runIds\).*not\('delivered_at','is',null\)/);
+ assert.match(page,/from\('run_events'\).*\.in\('run_id',runIds\).*\.eq\('kind','run_started'\)/);
  assert.doesNotMatch(page,/from\('artifacts'\).*\.limit\(/);
  assert.doesNotMatch(page,/object_path/);
  assert.match(page,/if\(artifactResult\.error\)console\.error\('ARTIFACT_METADATA_UNAVAILABLE'\)/);
+});
+test('local send feedback stays in the transcript rather than the typing indicator',async()=>{
+ const runtime=await readFile(new URL('../src/components/approved/runtime.js',import.meta.url),'utf8');
+ assert.match(runtime,/Mensagem ainda não confirmada pelo servidor/);
+ assert.doesNotMatch(runtime,/Mensagem sendo enviada/);
 });
 test('delivery mapping associates runs across bots and preserves orphan artifacts',()=>{
  const messages:WorkspaceMessage[]=[

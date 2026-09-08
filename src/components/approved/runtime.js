@@ -17,7 +17,7 @@ import { presence } from '../../domain/bots';
 import { displayPictures, defaultPicture, pictureUrl, botProfileInput } from '../../domain/profiles';
 import { isActiveRun } from '../../domain/runs';
 import { recoverCatalogPicture } from './display-picture-picker';
-import { acceptedMessagesAfterSend, browserLatencyPayload, connectionControlState, deliveredFileMarkup, deliveredFilesForMessage, draftAfterSuccessfulSend, hasRenderedAssistantForRun, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
+import { browserLatencyPayload, connectionControlState, deliveredFileMarkup, deliveredFilesForMessage, draftAfterFailedSend, draftAfterSuccessfulSend, failOptimisticMessage, hasRenderedAssistantForRun, liveComposerState, liveEntryState, mergeLiveTranscript, optimisticMessagesAfterSend, reconcileOptimisticMessage, runAfterRequest, runFailureFeedbackText, thinkingIndicatorText, v1VisibleMenuItems } from './live-runtime';
 import {
  activeMemoryVersion,collaborationStorageMode,createGenerationGate,groupFromApi,handoffLabel,handoffsForBot,
  reconcileMembershipChanges,sourceMessagesForHandoff,
@@ -102,6 +102,7 @@ const clearTimeout=id=>{window.clearTimeout(id);timers.delete(id);};
 const livePending=new Set();
 const requestKeys=new Map();
 const browserLatency=new Map();
+const announcedRunFailures=new Set();
 const previousScene=document.body.dataset.scene;
 const collaborationMode=()=>collaborationStorageMode(Boolean(options.live));
 
@@ -221,7 +222,12 @@ function renderConversation(scrollToEnd = false) {
   $('conversation-profile').innerHTML = `<div class="agent-title">${escapeHTML(agent.name)} <small>(${statusLabels[agent.status]})</small></div><div class="agent-description">${escapeHTML(agent.description)}</div>`;
   $('messages').innerHTML = messages.map(message => {
     if (message.author === 'system') return `<div class="message system"><span class="system-time">${message.time || ''}</span>${escapeHTML(message.text)}</div>`;
-    return `<div class="message ${message.author}"${message.runId ? ` data-run-id="${escapeHTML(message.runId)}"` : ''}><div class="message-author">${message.author === 'user' ? 'Você' : escapeHTML(agent.name)} diz:</div><div class="message-text ${message.bold ? 'bold' : ''}">${escapeHTML(message.text)}</div>${(message.files || []).map(file => file.href
+    const delivery=message.delivery==='sending'
+      ? '<div class="message-delivery" aria-label="Mensagem ainda não confirmada pelo servidor">Enviando...</div>'
+      : message.delivery==='failed'
+       ? `<div class="message-delivery failed">Não foi possível enviar. <button type="button" data-retry-message="${escapeHTML(message.clientId||message.id||'')}">Tentar novamente</button></div>`
+       : '';
+    return `<div class="message ${message.author}"${message.runId ? ` data-run-id="${escapeHTML(message.runId)}"` : ''}><div class="message-author">${message.author === 'user' ? 'Você' : escapeHTML(agent.name)} diz:</div><div class="message-text ${message.bold ? 'bold' : ''}">${escapeHTML(message.text)}</div>${delivery}${(message.files || []).map(file => file.href
       ? deliveredFileMarkup(file,prettySize(file.size))
       : `<span class="message-file"><img src="/assets/folder.svg" alt=""><span><strong>${escapeHTML(file.name)}</strong><small>${prettySize(file.size)} · Anexo local</small></span></span>`).join('')}</div>`;
   }).join('');
@@ -239,7 +245,7 @@ function renderConversation(scrollToEnd = false) {
    : composer.runtimeUnavailable
     ? '<span>ⓘ As tarefas reais ainda não estão disponíveis nesta conta. Para testar uma conversa agora, saia e escolha a demonstração local.</span>'
     : '';
-  $('typing-status').textContent = pending ? `${agent.name} está trabalhando na sua solicitação...` : '';
+  $('typing-status').textContent = thinkingIndicatorText({live:Boolean(options.live),name:agent.name,pending,run});
   $('message-input').disabled = composer.inputDisabled;
   $('send').disabled = composer.sendDisabled;
   $('stop-task').disabled = !pending || (options.live && (!run || run.cancel_requested));
@@ -252,8 +258,8 @@ function renderConversation(scrollToEnd = false) {
   $('last-message').textContent = lastMessage?.time ? `Última mensagem recebida às ${lastMessage.time} · Bot simulado` : 'Esta é uma conversa com um bot de IA.';
   if(options.live) {
     $('last-message').textContent=options.runsEnabled?'Conversa salva na sua conta.':'As tarefas ainda estão sendo preparadas.';
-    const status={QUEUED:'Sua tarefa está na fila.',RUNNING:'O bot está trabalhando...',WAITING_FOR_USER:'O bot precisa da sua resposta.',SUCCEEDED:'Resposta concluída.',FAILED:'Não foi possível concluir a tarefa. Sua mensagem continua salva; tente novamente.',CANCELLED:'Tarefa interrompida.'};
-    $('typing-status').textContent=run?.cancel_requested&&isActiveRun(run)?'Parando...':status[run?.state]||'';
+    const failure=runFailureFeedbackText(run);
+    if(run?.id&&failure&&!announcedRunFailures.has(run.id)){announcedRunFailures.add(run.id);notify(failure);}
   }
   renderAttachments();
   reportRenderedLatency();
@@ -750,6 +756,11 @@ host.addEventListener('click',event=>{
   }
   if(!event.target.closest('#popup-menu')&&!event.target.closest('#conversations-button,#presence-button,#emoticon,[data-contact-menu]'))closeMenu();
 });
+listen($('messages'),'click',event=>{
+ const retry=event.target.closest('[data-retry-message]');if(!retry||!options.live)return;
+ const message=(state.messages[state.active]||[]).find(item=>item.clientId===retry.dataset.retryMessage||item.id===retry.dataset.retryMessage);
+ if(message?.delivery==='failed')void liveSend(null,{content:message.text,clientId:message.clientId||message.id});
+});
 listen($('contact-list'),'click',event=>{
   const group=event.target.closest('[data-group]');
   if(group){const id=group.dataset.group;state.collapsed.has(id)?state.collapsed.delete(id):state.collapsed.add(id);renderContacts();return;}
@@ -1199,28 +1210,35 @@ renderContacts();
 
 
 function unavailable(){openDialog('Bot Live Messenger','<h2>Esta função está sendo preparada.</h2><p>Ela está disponível na demonstração. A integração com sua conta ainda não foi habilitada.</p>',null);}
-async function liveSend(event){
- event.preventDefault();const id=state.active;
+async function liveSend(event,retry){
+ event?.preventDefault();const id=state.active;
  const runs=options.runs||options.activeRuns||{};
  if(!id || !options.runsEnabled || livePending.has(id) || isActiveRun(runs[id]))return;
- const submittedDraft=$('message-input').value;
+ const submittedDraft=retry?.content??$('message-input').value;
  const content=submittedDraft.trim();if(!content)return;
  const submittedAt=performance.now();
- if(requestKeys.get(id)?.content!==content)requestKeys.set(id,{content,key:crypto.randomUUID()});
- livePending.add(id);renderConversation();
+ const existing=requestKeys.get(id);
+ if(retry?.clientId&&retry.clientId.startsWith('optimistic:'))requestKeys.set(id,{content,key:retry.clientId.slice('optimistic:'.length)});
+ else if(existing?.content!==content)requestKeys.set(id,{content,key:crypto.randomUUID()});
+ const request=requestKeys.get(id);
+ state.messages[id]=optimisticMessagesAfterSend(state.messages[id]||[],{idempotencyKey:request.key,content});
+ state.drafts[id]=draftAfterSuccessfulSend(state.drafts[id],submittedDraft);
+ if(state.active===id){const input=$('message-input');input.value=draftAfterSuccessfulSend(input.value,submittedDraft);state.drafts[id]=input.value;}
+ livePending.add(id);renderConversation(true);
  try{
-  const response=await fetch(`/api/bots/${id}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,idempotencyKey:requestKeys.get(id).key}),signal:abort.signal});
-  const result=await response.json();if(!response.ok)throw new Error(result.error);
+  const response=await fetch(`/api/bots/${id}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,idempotencyKey:request.key}),signal:abort.signal});
+  const result=await response.json().catch(()=>({}));if(!response.ok)throw new Error(result.error||'Não foi possível enviar.');
+  if(typeof result.messageId!=='string'||typeof result.runId!=='string')throw new Error('A tarefa foi salva, mas a confirmação não pôde ser carregada. Tente novamente.');
   if(abort.signal.aborted)return;
   browserLatency.set(result.runId,{submittedAt,answerReported:false});
   recordBrowserLatency(result.runId,'browser_admission_received',submittedAt);
-  requestKeys.delete(id);state.drafts[id]=draftAfterSuccessfulSend(state.drafts[id],submittedDraft);
+  if(requestKeys.get(id)?.key===request.key)requestKeys.delete(id);state.drafts[id]=draftAfterSuccessfulSend(state.drafts[id],submittedDraft);
   if(state.active===id){const input=$('message-input');input.value=draftAfterSuccessfulSend(input.value,submittedDraft);state.drafts[id]=input.value;}
-  state.messages[id]=acceptedMessagesAfterSend(state.messages[id]||[],{id:result.messageId,content});
-  options.runs=runAfterRequest(options.runs,id,result.run||{id:result.runId,bot_id:id,kind:'chat',state:result.status||'QUEUED',cancel_requested:false,error_code:null,created_at:new Date().toISOString(),finished_at:null});
+  state.messages[id]=reconcileOptimisticMessage(state.messages[id]||[],{id:result.messageId,idempotencyKey:request.key,content});
+  options.runs=runAfterRequest(options.runs,id,result.run||{id:result.runId,bot_id:id,kind:'chat',state:result.status||'QUEUED',cancel_requested:false,error_code:null,created_at:new Date().toISOString(),started_at:null,finished_at:null});
   if(state.active===id)renderConversation(true);
   options.refresh?.();
- }catch(e){if(!abort.signal.aborted)notify(e.message || 'Não foi possível enviar.');}
+ }catch(e){if(!abort.signal.aborted){state.messages[id]=failOptimisticMessage(state.messages[id]||[],request.key);state.drafts[id]=draftAfterFailedSend(state.drafts[id],submittedDraft);if(state.active===id){const input=$('message-input');input.value=draftAfterFailedSend(input.value,submittedDraft);state.drafts[id]=input.value;renderConversation(true);}notify(e.message || 'Não foi possível enviar.');}}
  finally{livePending.delete(id);if(!abort.signal.aborted)renderConversation();}
 }
 async function liveStop(){
@@ -1241,8 +1259,11 @@ async function liveSignOut(){
 }
 function syncLive(){
  if(!options.live)return;
- agents.splice(0,agents.length,...(options.bots||[]).map(bot=>({...bot,avatar:portraitUrl(bot.avatar_id),status:presence(bot.computer_state,bot.run_state,bot.enabled)})));
- state.messages=Object.fromEntries(Object.entries(options.messages||{}).map(([id,list])=>[id,list.map(m=>({id:m.id,runId:m.run_id,author:m.role==='assistant'?'agent':m.role,text:m.content,time:new Date(m.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),files:deliveredFilesForMessage(m.artifacts)}))]));
+ agents.splice(0,agents.length,...(options.bots||[]).map(bot=>({...bot,avatar:portraitUrl(bot.avatar_id),status:presence(bot.computer_state,(options.runs||options.activeRuns||{})[bot.id]||bot.run_state,bot.enabled)})));
+ state.messages=Object.fromEntries(Object.entries(options.messages||{}).map(([id,list])=>{
+  const authoritative=list.map(m=>({id:m.id,runId:m.run_id,author:m.role==='assistant'?'agent':m.role,text:m.content,time:new Date(m.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),files:deliveredFilesForMessage(m.artifacts)}));
+  return [id,mergeLiveTranscript(authoritative,state.messages[id]||[])];
+ }));
  state.userAvatarId=options.userAvatarId||defaultPicture;renderUserPictures();
  state.instructions=Object.fromEntries(agents.map(b=>[b.id,b.instructions]));
  state.jobs.clear();Object.entries(options.runs||options.activeRuns||{}).filter(([,run])=>isActiveRun(run)).forEach(([id,run])=>state.jobs.set(id,run.id));

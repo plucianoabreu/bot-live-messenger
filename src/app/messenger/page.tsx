@@ -20,15 +20,22 @@ export default async function MessengerPage(){
  if(botResult.error||messageResult.error||runResult.error||profileResult.error||computerResult.error)throw new Error('WORKSPACE_UNAVAILABLE');
  const runIds=(runResult.data??[]).map(run=>run.id);
  let artifacts:DeliveredArtifact[]=[];
+ const startedAtByRun=new Map<string,string>();
  if(runIds.length){
-  const artifactResult=await db.from('artifacts').select('id,run_id,name,mime_type,size_bytes,delivered_at').in('run_id',runIds).not('delivered_at','is',null).order('delivered_at');
+  const [artifactResult,startedResult]=await Promise.all([
+   db.from('artifacts').select('id,run_id,name,mime_type,size_bytes,delivered_at').in('run_id',runIds).not('delivered_at','is',null).order('delivered_at'),
+   db.from('run_events').select('run_id,created_at').in('run_id',runIds).eq('kind','run_started').order('created_at'),
+  ]);
   if(artifactResult.error)console.error('ARTIFACT_METADATA_UNAVAILABLE');
   else artifacts=(artifactResult.data??[]) as DeliveredArtifact[];
+  if(startedResult.error)console.error('RUN_START_METADATA_UNAVAILABLE');
+  else for(const event of startedResult.data??[])if(!startedAtByRun.has(event.run_id))startedAtByRun.set(event.run_id,event.created_at);
  }
+ const runs=(runResult.data??[]).map(run=>({...run,started_at:startedAtByRun.get(run.id)??null}));
  const messages=(messageResult.data??[]).reverse().map(m=>({...m,sequence:String(m.sequence)})) as WorkspaceMessage[];
- const hydratedMessages=attachDeliveredArtifacts(messages,runResult.data??[],artifacts);
+ const hydratedMessages=attachDeliveredArtifacts(messages,runs,artifacts);
  const history:Record<string,Message[]>={};for(const message of hydratedMessages)(history[message.bot_id]??=[]).push(message);
- const latestRuns:Record<string,RunSummary>={};for(const run of runResult.data??[]){if(!latestRuns[run.bot_id])latestRuns[run.bot_id]=run as RunSummary;}
+ const latestRuns:Record<string,RunSummary>={};for(const run of runs){if(!latestRuns[run.bot_id])latestRuns[run.bot_id]=run as RunSummary;}
  const bots=(botResult.data??[]).map(b=>({...b,computer_state:computerResult.data.state,run_state:latestRuns[b.id]?.state})) as Bot[];
  return <ApprovedMessenger live bots={bots} messages={history} runs={latestRuns} userName={user.user_metadata?.full_name??'Você'} userId={user.id} userAvatarId={profileResult.data.avatar_id} runsEnabled={process.env.RUNS_ENABLED==='true'} watchEnabled={process.env.RUNS_ENABLED==='true'&&process.env.COMPUTER_ENABLED==='true'&&process.env.WATCH_ENABLED==='true'} latencyDiagnostics={process.env.LATENCY_DIAGNOSTICS==='true'}/>;
 }

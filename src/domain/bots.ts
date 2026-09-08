@@ -4,12 +4,21 @@ export const presets = catalog.map(preset=>({...preset,avatar:pictureUrl(preset.
 export type ComputerState = 'NOT_CREATED' | 'CREATING' | 'READY' | 'PAUSED' | 'RESUMING' | 'FAILED';
 export type RunState = 'QUEUED' | 'RUNNING' | 'WAITING_FOR_USER' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
 export type Presence = 'available' | 'busy' | 'away' | 'offline';
-export function presence(computer: ComputerState, run?: RunState, enabled = true): Presence {
+export type PresenceRun = {state:RunState;started_at?:string|null;heartbeat_at?:string|null};
+export const busyPresenceDelayMs=120_000;
+export function isLongRunningExecution(run:PresenceRun|undefined,now=Date.now()) {
+ if(run?.state!=='RUNNING'||!run.started_at)return false;
+ const startedAt=Date.parse(run.started_at);
+ // Invalid or future timestamps must not turn a bot Busy; admission remains
+ // server-authoritative regardless of this visual-only state.
+ return Number.isFinite(startedAt)&&startedAt<=now&&now-startedAt>=busyPresenceDelayMs;
+}
+export function presence(computer: ComputerState, run?: RunState|PresenceRun, enabled = true, now=Date.now()): Presence {
   if (!enabled || computer === 'FAILED') return 'offline';
-  if (run === 'QUEUED' || run === 'RUNNING') return 'busy';
-  if (run === 'WAITING_FOR_USER') return 'away';
+  const state=typeof run==='string'?run:run?.state;
+  if (state === 'WAITING_FOR_USER') return 'away';
+  if (state === 'RUNNING'&&isLongRunningExecution(typeof run==='string'?undefined:run,now)) return 'busy';
   if (computer === 'PAUSED') return 'away';
-  if (computer === 'CREATING' || computer === 'RESUMING') return 'busy';
   return 'available'; // No computer yet is still ready to accept work.
 }
 export const presenceLabels = {available: 'Disponível', busy: 'Ocupado', away: 'Ausente', offline: 'Offline'};

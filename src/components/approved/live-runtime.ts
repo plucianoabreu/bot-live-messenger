@@ -1,5 +1,11 @@
+import type { RunSummary } from '../../domain/runs';
+
 export function draftAfterSuccessfulSend(current:string|undefined,submitted:string) {
  return current===submitted?'':current??'';
+}
+
+export function draftAfterFailedSend(current:string|undefined,submitted:string) {
+ return !current||current===submitted?submitted:current;
 }
 
 export function runAfterRequest<T>(runs:Record<string,T>|undefined,botId:string,run:T) {
@@ -19,10 +25,54 @@ export function connectionControlState({live,offline}:{live:boolean;offline:bool
  return {showToggle:!live,showInlineConnect:offline&&!live};
 }
 
-type TranscriptMessage = {id?:string;author:string;text:string};
+type ActivityRun = {state?: RunSummary['state'];cancel_requested?: boolean};
+/** RUNNING is aggregate execution state, not a reliable stream-composition signal. */
+export function thinkingIndicatorText({live,name,pending,run}:{live:boolean;name:string;pending:boolean;run?:ActivityRun}) {
+ const thinking=live ? run?.state==='RUNNING'&&!run.cancel_requested : pending;
+ return thinking?`${name} está pensando...`:'';
+}
+
+/** A failed run remains actionable without turning normal lifecycle polling into toast noise. */
+export function runFailureFeedbackText(run?:ActivityRun) {
+ if(run?.state==='FAILED')return 'Não foi possível concluir a tarefa. Sua mensagem continua salva; tente novamente.';
+ return '';
+}
+
+export type TranscriptMessage = {id?:string;author:string;text:string;clientId?:string;delivery?:'sending'|'failed'};
 export function acceptedMessagesAfterSend<T extends TranscriptMessage>(messages:readonly T[],accepted:{id:string;content:string}) {
  if(messages.some(message=>message.id===accepted.id))return [...messages];
  return [...messages,{id:accepted.id,author:'user' as const,text:accepted.content.trim()}];
+}
+
+export function optimisticMessageId(idempotencyKey:string) {return `optimistic:${idempotencyKey}`;}
+
+export function optimisticMessagesAfterSend(messages:readonly TranscriptMessage[],pending:{idempotencyKey:string;content:string}):TranscriptMessage[] {
+ const clientId=optimisticMessageId(pending.idempotencyKey);
+ const existing=messages.find(message=>message.clientId===clientId||message.id===clientId);
+ if(existing)return messages.map(message=>(message.clientId===clientId||message.id===clientId)?{...message,delivery:'sending' as const}:message);
+ return [...messages,{id:clientId,clientId,author:'user' as const,text:pending.content.trim(),delivery:'sending' as const}];
+}
+
+export function reconcileOptimisticMessage(messages:readonly TranscriptMessage[],accepted:{id:string;idempotencyKey:string;content:string}):TranscriptMessage[] {
+ const clientId=optimisticMessageId(accepted.idempotencyKey);
+ const confirmed={id:accepted.id,author:'user' as const,text:accepted.content.trim()};
+ let replaced=false;
+ const reconciled:TranscriptMessage[]=[];
+ for(const message of messages){
+  if(message.id===accepted.id||message.clientId===clientId||message.id===clientId){if(!replaced){replaced=true;reconciled.push(confirmed);}continue;}
+  reconciled.push(message);
+ }
+ return replaced?reconciled:[...reconciled,confirmed];
+}
+
+export function failOptimisticMessage(messages:readonly TranscriptMessage[],idempotencyKey:string):TranscriptMessage[] {
+ const clientId=optimisticMessageId(idempotencyKey);
+ return messages.map(message=>(message.clientId===clientId||message.id===clientId)?{...message,delivery:'failed' as const}:message);
+}
+
+export function mergeLiveTranscript<T extends TranscriptMessage>(authoritative:readonly T[],local:readonly TranscriptMessage[]):TranscriptMessage[] {
+ const authoritativeIds=new Set(authoritative.map(message=>message.id).filter(Boolean));
+ return [...authoritative,...local.filter(message=>message.delivery&&!authoritativeIds.has(message.id))];
 }
 
 type DeliveredArtifact = {id:string;name:string;size_bytes:number};
