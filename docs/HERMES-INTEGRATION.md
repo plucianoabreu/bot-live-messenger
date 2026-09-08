@@ -51,12 +51,12 @@ copy the bytes to the private artifact bucket. Delivery metadata includes the
 run, filename, MIME type, byte size and SHA-256 checksum; the database announces
 the artifact only after Storage upload and a second current-fence check.
 
-The executor calls the reusable delivery seam in
-`src/server/computer/hermes-artifacts.ts` before clearing `active_run` when
-`HERMES_EXPORT_PATH` is configured on Trigger. The configured value is a relative
-path below `/workspace/exports`. A root-owned helper traverses every path component
-without following symlinks and copies a stable, bounded snapshot into a root-only
-staging file before the worker reads it.
+The executor uses a per-execution delivery contract. When a user requests a file,
+Hermes writes at most one file below `/workspace/exports/<run-id>/<version>/`
+and declares its basename with `[[artifact:filename]]`. The worker validates the
+declaration, derives the path itself, and uses the existing authorized, symlink-safe
+export seam before announcing delivery. Ordinary replies do not export files.
+The global `HERMES_EXPORT_PATH` setting is no longer used.
 
 Account cleanup inventories both provider-neutral computers and
 `hermes_workspaces`, stores a destruction receipt for each provider ID, and deletes

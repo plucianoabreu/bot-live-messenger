@@ -1,3 +1,4 @@
+import { artifactContract } from './hermes-artifact-contract';
 import { randomBytes, createHash } from 'node:crypto';
 import { Sandbox } from '@e2b/desktop';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -66,7 +67,7 @@ export async function destroyAmbiguousHermesRuntime(input: {
   await input.releaseDestroyed();
 }
 
-export async function executeHermes(input: { runId: string; version: number; ownerId: string; botId: string; instructions: string; message: string; model: string; signal: AbortSignal; exportPath?: string }) {
+export async function executeHermes(input: { runId: string; version: number; ownerId: string; botId: string; instructions: string; message: string; model: string; signal: AbortSignal }) {
   const key = process.env.E2B_API_KEY;
   const template = process.env.HERMES_TEMPLATE_ID;
   const gateway = process.env.HERMES_MODEL_GATEWAY_URL;
@@ -195,7 +196,8 @@ export async function executeHermes(input: { runId: string; version: number; own
     });
     if (startMarked.error || !startMarked.data) throw new Error('HERMES_START_FENCE_CHANGED');
     startAttempted = true;
-    const started = await client.start(input, input.signal);
+    const contract = artifactContract(input.runId, input.version);
+    const started = await client.start({ ...input, instructions: input.instructions + '\n\n' + contract.instructions }, input.signal);
     remote = started.runId;
     const remoteSaved = await db.rpc('record_hermes_remote_start', {
       p_run_id: input.runId,
@@ -210,16 +212,17 @@ export async function executeHermes(input: { runId: string; version: number; own
         terminal = true;
         if (state.status !== 'completed' || !state.output?.trim() || !state.usage) throw new Error('HERMES_RUN_FAILED');
         observedUsage = state.usage;
-        if (input.exportPath) {
+        const delivered = contract.parse(state.output);
+        if (delivered.relativePath) {
           const exportDb = workerDatabase();
           const bucket = process.env.ARTIFACT_BUCKET;
           if (!bucket) throw new Error('ARTIFACT_STORE_NOT_CONFIGURED');
           const sandbox = await connectHermesE2B(key, machineId!, networkPolicy, resourceShape);
-          await exportHermesArtifact({ ownerId: input.ownerId, runId: input.runId, executionVersion: input.version, finalOutputKey: remote, relativePath: input.exportPath, policy: defaultWorkspacePolicy, authorizer: databaseHermesArtifactAuthorizer(exportDb), reader: { readExport: async request => {
+          await exportHermesArtifact({ ownerId: input.ownerId, runId: input.runId, executionVersion: input.version, finalOutputKey: remote, relativePath: delivered.relativePath, policy: defaultWorkspacePolicy, authorizer: databaseHermesArtifactAuthorizer(exportDb), reader: { readExport: async request => {
             return readHermesExport(sandbox, request.path, request.maxBytes);
           } }, store: privateArtifactStore(bucket, exportDb), repository: databaseHermesArtifactRepository(exportDb) });
         }
-        return { text: state.output, providerResponseId: remote, usage: state.usage };
+        return { text: delivered.text, providerResponseId: remote, usage: state.usage };
       }
       await delay(1000, undefined, { signal: input.signal });
     }
