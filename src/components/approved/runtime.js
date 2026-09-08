@@ -116,6 +116,15 @@ const windows=new Map();let windowOrder=20;
 const rootWindow=host.querySelector('#conversation-window');
 const registeredListeners=[];
 function listen(element,type,handler,options){element.addEventListener(type,handler,options);registeredListeners.push({element,type,handler,options});}
+const conversationTitleIcon=host.querySelector('#conversation-drag > img');
+if(conversationTitleIcon){
+ conversationTitleIcon.src='/assets/titlebar-chats.svg';
+ listen(conversationTitleIcon,'error',event=>{
+  const icon=event.currentTarget;
+  if(!icon.src.endsWith('/assets/messenger.svg'))icon.src='/assets/messenger.svg';
+  else icon.hidden=true;
+ });
+}
 const $ = id => {
  const active=windows.get(state.active);
  if(active){if(id==='conversation-window')return active;const local=active.querySelector(`[data-part="${id}"],#${id}`);if(local)return local;}
