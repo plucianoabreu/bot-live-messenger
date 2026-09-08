@@ -84,8 +84,16 @@ export function createChatLatencyTracker(clock: () => number = Date.now) {
 }
 
 type LatencyDatabase = {
-  rpc(functionName: string, args: Record<string, unknown>): PromiseLike<{ error: unknown }>;
+  rpc(functionName: string, args: Record<string, unknown>): PromiseLike<{ data: boolean | null; error: unknown }>;
 };
+
+type LatencyPersistenceFailure = 'rpc_error' | 'rejected' | 'rpc_exception';
+type LatencyPersistenceFailureReporter = (failure: LatencyPersistenceFailure) => void;
+
+function reportLatencyPersistenceFailure(failure: LatencyPersistenceFailure) {
+  // Static categories keep Trigger logs useful without exposing run IDs or database details.
+  console.warn('CHAT_LATENCY_PERSIST_FAILED', failure);
+}
 
 /** Telemetry must not prevent a completed response from reaching the user. */
 export async function persistChatLatencyMeasurement(
@@ -93,15 +101,25 @@ export async function persistChatLatencyMeasurement(
   runId: string,
   version: number,
   measurement: ChatLatencyMeasurement,
+  reportFailure: LatencyPersistenceFailureReporter = reportLatencyPersistenceFailure,
 ) {
   try {
-    const { error } = await database.rpc('record_chat_latency_measurement', {
+    const { data, error } = await database.rpc('record_chat_latency_measurement', {
       p_run_id: runId,
       p_version: version,
       ...measurement,
     });
-    return !error;
+    if (error) {
+      reportFailure('rpc_error');
+      return false;
+    }
+    if (data !== true) {
+      reportFailure('rejected');
+      return false;
+    }
+    return true;
   } catch {
+    reportFailure('rpc_exception');
     return false;
   }
 }

@@ -4,7 +4,7 @@ Set `LATENCY_DIAGNOSTICS=true` in both the web deployment and the `bot-messenger
 
 The measurements contain only fixed stage names, millisecond durations and the run relationship. They never contain a prompt, reply, identity, provider body, credential, model name, provider identifier, token hash or error detail.
 
-`chat_latency_measurements` uses the worker's monotonic clock. It measures worker claim, history, memory, direct-provider start/end, Hermes cold provisioning or resume, remote Hermes execution, executor completion and successful persistence. A null stage is missing data, not zero duration.
+`chat_latency_measurements` uses the worker's monotonic clock. It measures worker claim, history, memory, direct-provider start/end, Hermes cold provisioning or resume, remote Hermes execution, executor completion and successful persistence. A null stage is missing data, not zero duration. A failed write emits only `CHAT_LATENCY_PERSIST_FAILED` with one of `rpc_error`, `rejected`, or `rpc_exception`; it contains no run ID or conversation data.
 
 `chat_latency_client_measurements` has separate clocks. Admission stages start at API request entry; browser stages start at submit and end at HTTP acceptance or an animation frame after the assistant DOM node exists. Do not subtract durations across these sources. `recorded_at` and `updated_at` can order database receipts, but do not establish an exact browser-to-worker duration.
 

@@ -52,3 +52,8 @@ export type BrowserLatencyStage='browser_admission_received'|'browser_answer_dom
 export function browserLatencyPayload(stage:BrowserLatencyStage,startedAt:number,now:number) {
  return {stage,elapsedMs:Math.max(0,Math.min(3600000,Math.round(now-startedAt)))};
 }
+
+type RunMessage = {author:string;runId?:string};
+export function hasRenderedAssistantForRun(messages:readonly RunMessage[],runId:string) {
+ return messages.some(message=>message.author==='agent'&&message.runId===runId);
+}

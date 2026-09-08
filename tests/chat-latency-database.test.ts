@@ -13,6 +13,8 @@ test('latency storage is service-only, fenced to the execution version, and hold
     await db.exec('select public.ensure_bots();update public.runtime_config set runs_enabled=true;');
     const { rows: [run] } = await db.query<{ id: string }>(`select public.enqueue_message((select id from public.bots limit 1),'hello',gen_random_uuid()) as id`);
     const { rows: [claim] } = await db.query<{ value: { version: number } }>('select public.claim_chat($1) as value', [run.id]);
+    await db.query('select public.authorize_chat_call($1,$2,$3)', [run.id, claim.value.version, 1]);
+    assert.equal((await db.query<{ ok: boolean }>("select public.finish_chat($1,$2,'done','response-id',1,1) as ok", [run.id, claim.value.version])).rows[0].ok, true);
     assert.equal((await db.query<{ ok: boolean }>('select public.record_chat_latency_measurement($1,$2,0,4,7,8,null,null,null,null,null,null,null,null,42,45) as ok', [run.id, claim.value.version])).rows[0].ok, true);
     await db.exec('set role service_role;');
     const { rows: [measurement] } = await db.query<{ worker_claimed_ms: number; executor_finished_ms: number;persistence_completed_ms:number }>('select worker_claimed_ms,executor_finished_ms,persistence_completed_ms from public.chat_latency_measurements where run_id=$1', [run.id]);

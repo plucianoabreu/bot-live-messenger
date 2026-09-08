@@ -13,6 +13,7 @@ import {
  liveComposerState,
   liveEntryState,
   browserLatencyPayload,
+  hasRenderedAssistantForRun,
  runAfterRequest,
  v1VisibleMenuItems,
 } from '../src/components/approved/live-runtime';
@@ -35,6 +36,18 @@ test('browser latency payload is bounded and contains no conversation data',()=>
  assert.deepEqual(browserLatencyPayload('browser_admission_received',100,112.4),{stage:'browser_admission_received',elapsedMs:12});
  assert.deepEqual(browserLatencyPayload('browser_answer_dom_ready',100,99),{stage:'browser_answer_dom_ready',elapsedMs:0});
  assert.deepEqual(browserLatencyPayload('browser_answer_dom_ready',0,3600001),{stage:'browser_answer_dom_ready',elapsedMs:3600000});
+});
+
+test('browser completion requires an assistant message from the submitted run',()=>{
+ const runId='run-current';
+ assert.equal(hasRenderedAssistantForRun([
+  {author:'user',runId},
+  {author:'agent',runId:'run-older'},
+ ],runId),false);
+ assert.equal(hasRenderedAssistantForRun([
+  {author:'user',runId},
+  {author:'agent',runId},
+ ],runId),true);
 });
 
 test('successful send clears only the exact submitted draft',()=>{
