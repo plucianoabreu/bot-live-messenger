@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { isActiveRun, livePollInterval, parseSequencePage } from '../src/domain/runs';
 import {
  acceptedMessagesAfterSend,
+ connectionControlState,
  deliveredFilesForMessage,
  draftAfterSuccessfulSend,
  liveComposerState,
@@ -38,6 +39,12 @@ test('disabled live runtime gives the composer an explicit unavailable state',()
   runtimeUnavailable:true,
  });
  assert.equal(liveComposerState({offline:false,pending:false,live:true,runsEnabled:true}).runtimeUnavailable,false);
+});
+test('live mode omits unavailable bot connection controls while demo keeps them',()=>{
+ assert.deepEqual(connectionControlState({live:true,offline:true}),{showToggle:false,showInlineConnect:false});
+ assert.deepEqual(connectionControlState({live:true,offline:false}),{showToggle:false,showInlineConnect:false});
+ assert.deepEqual(connectionControlState({live:false,offline:true}),{showToggle:true,showInlineConnect:true});
+ assert.deepEqual(connectionControlState({live:false,offline:false}),{showToggle:true,showInlineConnect:false});
 });
 test('accepted send appears immediately in the local transcript',()=>{
  const current=[{id:'assistant-1',author:'agent',text:'Como posso ajudar?'}] as const;

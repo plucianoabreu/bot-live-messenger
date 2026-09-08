@@ -15,6 +15,10 @@ export function liveComposerState({offline,pending,live,runsEnabled}:{offline:bo
  };
 }
 
+export function connectionControlState({live,offline}:{live:boolean;offline:boolean}) {
+ return {showToggle:!live,showInlineConnect:offline&&!live};
+}
+
 type TranscriptMessage = {id?:string;author:string;text:string};
 export function acceptedMessagesAfterSend<T extends TranscriptMessage>(messages:readonly T[],accepted:{id:string;content:string}) {
  if(messages.some(message=>message.id===accepted.id))return [...messages];

@@ -3,7 +3,7 @@
 import { presence } from '../../domain/bots';
 import { displayPictures, defaultPicture, pictureUrl, botProfileInput } from '../../domain/profiles';
 import { isActiveRun } from '../../domain/runs';
-import { acceptedMessagesAfterSend, deliveredFilesForMessage, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
+import { acceptedMessagesAfterSend, connectionControlState, deliveredFilesForMessage, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
 import {
  activeMemoryVersion,collaborationStorageMode,createGenerationGate,groupFromApi,handoffLabel,handoffsForBot,
  reconcileMembershipChanges,sourceMessagesForHandoff,
@@ -208,9 +208,10 @@ function renderConversation(scrollToEnd = false) {
   const pending = options.live ? isActiveRun(run) || livePending.has(agent.id) : state.jobs.has(agent.id);
   const offline = agent.status === 'offline';
   const composer=liveComposerState({offline,pending,live:Boolean(options.live),runsEnabled:Boolean(options.runsEnabled)});
+  const connection=connectionControlState({live:Boolean(options.live),offline});
   $('connection-notice').hidden = !offline&&!composer.runtimeUnavailable;
   $('connection-notice').innerHTML = offline
-   ? `<span>ⓘ ${escapeHTML(agent.name)} está offline.</span><button data-command="connect">Conectar bot</button>`
+   ? `<span>ⓘ ${escapeHTML(agent.name)} ${options.live?'está indisponível nesta conta. Tente outro bot.':'está offline.'}</span>${connection.showInlineConnect?'<button data-command="connect">Conectar bot</button>':''}`
    : composer.runtimeUnavailable
     ? '<span>ⓘ As tarefas reais ainda não estão disponíveis nesta conta. Para testar uma conversa agora, saia e escolha a demonstração local.</span>'
     : '';
@@ -427,8 +428,9 @@ function contactMenu(id,anchor,point) {
     {label:'Ver perfil...',action:() => openAgentDetails(id)},
     {label:'Ver memória...',action:() => openMemoryDialog(id)},
     {label:'Ver atividade...',action:() => openActivity(id)},
-    {separator:true},
-    {label:agent.status==='offline'?'Conectar bot':'Desconectar bot',disabled:state.jobs.has(id),action:() => toggleConnection(id)},
+    ...(connectionControlState({live:Boolean(options.live),offline:agent.status==='offline'}).showToggle
+      ? [{separator:true},{label:agent.status==='offline'?'Conectar bot':'Desconectar bot',disabled:state.jobs.has(id),action:() => toggleConnection(id)}]
+      : []),
     {label:'Mover para um grupo...',v1Feature:'groups',action:() => openGroupAssignment(id)}
   ],point);
 }
