@@ -28,6 +28,14 @@ async function enqueueAndClaim(db: PGlite, botOffset = 0) {
   return { run, version: claim.version };
 }
 
+async function recordUnknownHermesSettlement(db: PGlite, run: string, version: number) {
+  return db.query(
+    'select public.record_hermes_usage_settlement($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14::jsonb)',
+    [run, version, `${run}:${version}:hermes_usage`, 'unknown', 270000, null, null, null,
+      '0'.repeat(64), null, null, null, null, JSON.stringify(['workerCrashed'])],
+  );
+}
+
 test('Hermes keeps an account fence and atomically bounds cumulative model charges with the complete schema', async () => {
   const db = await databaseWithAllMigrations();
   try {
@@ -99,6 +107,7 @@ test('a new run and execution version rotate the Hermes proxy token and fence st
     const secondHash = 'b'.repeat(64);
     await db.query('select public.claim_hermes_workspace($1,$2,$3)', [first.run, first.version, firstHash]);
     assert.equal((await db.query<{ ok: boolean }>('select public.release_hermes_workspace($1,$2,$3) as ok', [first.run, first.version + 1, firstHash])).rows[0].ok, false);
+    await recordUnknownHermesSettlement(db, first.run, first.version);
     assert.equal((await db.query<{ ok: boolean }>('select public.release_hermes_workspace($1,$2,$3) as ok', [first.run, first.version, firstHash])).rows[0].ok, true);
     await db.query('select public.fail_chat($1,$2)', [first.run, first.version]);
 
@@ -185,6 +194,7 @@ test('Hermes pause tokens fence delayed completion before recovery can begin', a
       db.query('select public.claim_hermes_workspace($1,$2,$3)', [replacement.run, replacement.version, 'b'.repeat(64)]),
       /COMPUTER_RECOVERY_IN_PROGRESS/,
     );
+    await recordUnknownHermesSettlement(db, abandoned.run, abandoned.version);
     assert.equal((await db.query<{ ok: boolean }>(
       'select public.complete_hermes_pause($1,$2,$3,$4) as ok',
       [abandoned.run, abandoned.version, abandonedHash, pause.pause_token],
@@ -206,6 +216,7 @@ test('failed Hermes provisioning can release confirmed cleanup or retain a known
     assert.equal((await db.query<{ ok: boolean }>(
       'select public.release_failed_hermes_provision($1,$2,$3) as ok', [cleaned.run, cleaned.version, 'f'.repeat(64)],
     )).rows[0].ok, false);
+    await recordUnknownHermesSettlement(db, cleaned.run, cleaned.version);
     assert.equal((await db.query<{ ok: boolean }>(
       'select public.release_failed_hermes_provision($1,$2,$3) as ok', [cleaned.run, cleaned.version, cleanedHash],
     )).rows[0].ok, true);
@@ -363,6 +374,7 @@ test('account pilot budgets isolate users and keep run and Hermes reservations i
 
     await db.exec(`update public.account_pilot_budgets set allocated_micros=20000 where user_id='${A}'`);
     await db.query('select public.claim_hermes_workspace($1,$2,$3)', [runA, claimA.version, 'a'.repeat(64)]);
+    await recordUnknownHermesSettlement(db, runA, claimA.version);
     assert.equal((await db.query<{ ok: boolean }>(
       'select public.release_failed_hermes_provision($1,$2,$3) as ok', [runA, claimA.version, 'a'.repeat(64)],
     )).rows[0].ok, true);

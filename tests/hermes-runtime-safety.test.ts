@@ -404,6 +404,48 @@ test('quiescing does not pause or release while Hermes stays nonterminal', async
   assert.deepEqual(events, ['stop', 'read', 'wait', 'read']);
 });
 
+test('quiescing never pauses or releases an ambiguous remote start', async () => {
+  const { quiesceHermesRuntime } = await import('../src/server/execution/hermes-executor');
+  const events: string[] = [];
+  await assert.rejects(quiesceHermesRuntime({
+    startAttempted: true,
+    alreadyTerminal: false,
+    async pause() { events.push('pause'); },
+    async release() { events.push('release'); },
+  }), /HERMES_STOP_UNCONFIRMED/);
+  assert.deepEqual(events, []);
+});
+
+test('ambiguous remote start is destroyed and settled before its fence is released', async () => {
+  const { destroyAmbiguousHermesRuntime } = await import('../src/server/execution/hermes-executor');
+  const events: string[] = [];
+  await destroyAmbiguousHermesRuntime({
+    async destroy() { events.push('destroy'); },
+    async settleUnknown() { events.push('settle'); },
+    async releaseDestroyed() { events.push('release'); },
+  });
+  assert.deepEqual(events, ['destroy', 'settle', 'release']);
+});
+
+test('ambiguous remote start retains its fence when destroy or settlement fails', async () => {
+  const { destroyAmbiguousHermesRuntime } = await import('../src/server/execution/hermes-executor');
+  const destroyEvents: string[] = [];
+  await assert.rejects(destroyAmbiguousHermesRuntime({
+    async destroy() { destroyEvents.push('destroy'); throw new Error('provider timeout'); },
+    async settleUnknown() { destroyEvents.push('settle'); },
+    async releaseDestroyed() { destroyEvents.push('release'); },
+  }), /provider timeout/);
+  assert.deepEqual(destroyEvents, ['destroy']);
+
+  const settlementEvents: string[] = [];
+  await assert.rejects(destroyAmbiguousHermesRuntime({
+    async destroy() { settlementEvents.push('destroy'); },
+    async settleUnknown() { settlementEvents.push('settle'); throw new Error('database timeout'); },
+    async releaseDestroyed() { settlementEvents.push('release'); },
+  }), /database timeout/);
+  assert.deepEqual(settlementEvents, ['destroy', 'settle']);
+});
+
 test('kill switch is part of the active-run authorization predicate', async () => {
   const module = await import('../src/server/execution/hermes-executor');
   const mayContinue = (module as Record<string, unknown>).hermesExecutionMayContinue;
