@@ -45,8 +45,7 @@ export const chatTask=task({
    const memoryContext=await loadChatMemoryContextWhenEnabled(db,r.user_id,r.bot_id,process.env.MEMORY_ENABLED==='true',controller.signal);
    const result=hermesEnabled
     ? await executeHermes({runId,version:r.version,ownerId:r.user_id,botId:r.bot_id,
-      instructions:[r.instructions,memoryContext].filter(Boolean).join('\n\n'),message:current.content,model,signal:controller.signal,
-      exportPath:process.env.HERMES_EXPORT_PATH})
+      instructions:[r.instructions,memoryContext].filter(Boolean).join('\n\n'),message:current.content,model,signal:controller.signal})
     : await executeChat({model,instructions:r.instructions,memoryContext,history,signal:controller.signal,provider:createOpenAIProvider(),
     authorize:async(bytes,output)=>{
      // Conservative byte-based bound plus framing allowance; prices must be verified for this model.
