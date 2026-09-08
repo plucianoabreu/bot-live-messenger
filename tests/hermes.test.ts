@@ -29,6 +29,7 @@ test('all bots use the account endpoint with separate stable sessions', async ()
   assert.equal(requests[0].headers.get('Idempotency-Key'), runId);
   assert.equal(requests[0].headers.get('E2B-Traffic-Access-Token'), workspace.trafficAccessToken);
   assert.equal(requests[0].body.provider, 'openai-api');
+  assert.deepEqual(requests[0].body.model_options, { reasoning_effort: 'none' });
   assert.equal(hermesSession(ownerId, botId), requests[0].body.session_id);
 });
 

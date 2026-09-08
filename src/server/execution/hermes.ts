@@ -77,7 +77,7 @@ export class HermesClient {
         Buffer.byteLength(input.message + input.instructions) > 48000) throw new Error('HERMES_INPUT_INVALID');
     const result = await this.request('/v1/runs', signal, {
       input: input.message, instructions: input.instructions, session_id: session,
-      model: input.model, provider: 'openai-api', model_options: { reasoning_effort: 'high' },
+      model: input.model, provider: 'openai-api', model_options: { reasoning_effort: 'none' },
     }, { 'Idempotency-Key': input.runId, 'X-Hermes-Session-Key': session });
     const parsed = started.safeParse(result);
     if (!parsed.success) throw new Error('HERMES_RESPONSE_INVALID');
