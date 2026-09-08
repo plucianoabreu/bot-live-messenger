@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "test": "node --import tsx --test tests/*.test.ts",
     "check:setup": "node scripts/check-setup.mjs",
-    "diagnose:runtime": "node --import tsx scripts/operator-diagnostics.ts"
+    "diagnose:runtime": "node --import tsx scripts/operator-diagnostics.ts",
+    "test:prewarm-postgres-lock": "node scripts/test-prewarm-postgres-lock.mjs"
   },
   "dependencies": {
     "@e2b/desktop": "^2.3.0",
