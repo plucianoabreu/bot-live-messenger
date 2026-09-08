@@ -22,6 +22,7 @@ export const chatTask=task({
   const {data:r,error}=await db.rpc('claim_chat',{p_run_id:runId});
   if(error)throw new Error('CLAIM_FAILED');
   if(!r)return {skipped:true};
+  const latencyDiagnosticsEnabled=process.env.LATENCY_DIAGNOSTICS==='true';
   const latency=createChatLatencyTracker();
   latency.mark('worker_claimed');
   const controller=new AbortController();
@@ -58,7 +59,7 @@ export const chatTask=task({
     ? await executeHermes({runId,version:r.version,ownerId:r.user_id,botId:r.bot_id,
       instructions:[trustedInstructions,untrustedMemory].filter(Boolean).join('\n\n'),message:untrustedMessage,model,signal:controller.signal,
       onTimingMark:latency.mark})
-    : await executeChat({model,identity,memoryContext,history,signal:controller.signal,provider:createOpenAIProvider(),
+    : await executeChat({model,identity,memoryContext,history,signal:controller.signal,provider:createOpenAIProvider(),onTimingMark:latency.mark,
     authorize:async(bytes,output)=>{
      // Conservative byte-based bound plus framing allowance; prices must be verified for this model.
      const cost=Math.ceil((bytes+4096)*inputRate+output*outputRate);
@@ -66,10 +67,10 @@ export const chatTask=task({
      if(error)throw new Error('CALL_NOT_AUTHORIZED');
     }});
    latency.mark('executor_finished');
-   await persistChatLatencyMeasurement(db,runId,r.version,latency.snapshot());
    const {data:saved,error:saveError}=await db.rpc('finish_chat',{p_run_id:runId,p_version:r.version,p_text:result.text,
     p_response_id:result.providerResponseId,p_input:result.usage.input_tokens,p_output:result.usage.output_tokens});
    if(saveError)throw new Error('SAVE_FAILED');
+   if(saved&&latencyDiagnosticsEnabled){latency.mark('persistence_completed');await persistChatLatencyMeasurement(db,runId,r.version,latency.snapshot());}
    return {saved:Boolean(saved)};
   }catch{
    await db.rpc('fail_chat',{p_run_id:runId,p_version:r.version});

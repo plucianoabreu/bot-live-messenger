@@ -68,7 +68,7 @@ export async function destroyAmbiguousHermesRuntime(input: {
   await input.releaseDestroyed();
 }
 
-export async function executeHermes(input: { runId: string; version: number; ownerId: string; botId: string; instructions: string; message: string; model: string; signal: AbortSignal; onTimingMark?: (stage: Extract<ChatLatencyStage, 'hermes_workspace_claimed' | 'hermes_sandbox_ready' | 'hermes_remote_started' | 'hermes_remote_completed'>) => void }) {
+export async function executeHermes(input: { runId: string; version: number; ownerId: string; botId: string; instructions: string; message: string; model: string; signal: AbortSignal; onTimingMark?: (stage: Extract<ChatLatencyStage, 'hermes_workspace_claimed' | 'hermes_provision_started' | 'hermes_resume_started' | 'hermes_sandbox_ready' | 'hermes_remote_started' | 'hermes_remote_completed'>) => void }) {
   const key = process.env.E2B_API_KEY;
   const template = process.env.HERMES_TEMPLATE_ID;
   const gateway = process.env.HERMES_MODEL_GATEWAY_URL;
@@ -158,6 +158,7 @@ export async function executeHermes(input: { runId: string; version: number; own
   };
   try {
     if (!machineId) {
+      input.onTimingMark?.('hermes_provision_started');
       const created = await provisionHermes(
         new HermesE2BFactory(key, template, 120_000, networkPolicy, resourceShape),
         input.ownerId,
@@ -182,6 +183,7 @@ export async function executeHermes(input: { runId: string; version: number; own
           !/^[a-f0-9]{64}$/.test(String(binding.api_key))) {
         throw new Error('HERMES_WORKSPACE_INCOMPLETE');
       }
+      input.onTimingMark?.('hermes_resume_started');
       const sandbox = await connectHermesE2B(key, machineId, networkPolicy, resourceShape);
       await rotateHermesGatewayToken(sandbox.files, token, { gatewayUrl: gateway, apiServerKey: binding.api_key });
       await sandbox.commands.run(`chmod 600 ${HERMES_LAUNCH_PATH}`, { user: 'root', timeoutMs: 10_000 });

@@ -11,16 +11,25 @@ test('latency tracker records elapsed durations once without conversation conten
   tracker.mark('history_loaded');
   now = 1_500;
   tracker.mark('executor_started');
+  now = 1_800;
+  tracker.mark('direct_provider_started');
+  now = 2_100;
+  tracker.mark('direct_provider_completed');
   assert.deepEqual(tracker.snapshot(), {
     worker_claimed_ms: 0,
     history_loaded_ms: 120,
     memory_loaded_ms: null,
     executor_started_ms: 500,
+    direct_provider_started_ms: 800,
+    direct_provider_completed_ms: 1100,
     hermes_workspace_claimed_ms: null,
+    hermes_provision_started_ms: null,
+    hermes_resume_started_ms: null,
     hermes_sandbox_ready_ms: null,
     hermes_remote_started_ms: null,
     hermes_remote_completed_ms: null,
     executor_finished_ms: null,
+    persistence_completed_ms: null,
   });
 });
 

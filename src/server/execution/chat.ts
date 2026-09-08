@@ -1,6 +1,7 @@
 /** Trusted worker boundary. Never import this module into a client component. */
 import { MAX_CHAT_MEMORY_BYTES } from './memory-context';
 import { buildBotIdentityInstruction, parseBotIdentitySnapshot, renderUntrustedContent, type BotIdentitySnapshot } from './identity-instructions';
+import type { ChatLatencyStage } from './chat-latency';
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string };
 export type ChatRequest = {
@@ -33,6 +34,7 @@ export async function executeChat(options: {
   // Must atomically authorize this exact call under a live worker lease.
   authorize: (inputByteBound: number, outputTokenLimit: number) => Promise<void>;
   provider: ChatProvider;
+  onTimingMark?: (stage:Extract<ChatLatencyStage,'direct_provider_started'|'direct_provider_completed'>)=>void;
 }) {
   options.signal.throwIfAborted();
   if (!options.model.trim()) throw new Error('MODEL_NOT_CONFIGURED');
@@ -54,8 +56,10 @@ export async function executeChat(options: {
   const outputTokenLimit = 1200;
   await options.authorize(inputByteBound, outputTokenLimit);
   options.signal.throwIfAborted();
+  options.onTimingMark?.('direct_provider_started');
   const response = await options.provider({ model: options.model, instructions,
     input, max_output_tokens: outputTokenLimit, store: false, reasoning: { effort: 'high' } }, options.signal);
+  options.onTimingMark?.('direct_provider_completed');
   options.signal.throwIfAborted();
   if (!response.usage || !Number.isSafeInteger(response.usage.input_tokens) ||
       !Number.isSafeInteger(response.usage.output_tokens) || response.usage.input_tokens < 0 ||

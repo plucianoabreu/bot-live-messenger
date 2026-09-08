@@ -47,3 +47,8 @@ export function v1VisibleMenuItems<T extends {v1Feature?:V1ExcludedFeature}>(ite
 export function liveEntryState(alreadyEntered:boolean,mainWindowHidden:boolean) {
  return {entered:true,mainWindowHidden:alreadyEntered?mainWindowHidden:false,showOnboarding:!alreadyEntered};
 }
+
+export type BrowserLatencyStage='browser_admission_received'|'browser_answer_dom_ready';
+export function browserLatencyPayload(stage:BrowserLatencyStage,startedAt:number,now:number) {
+ return {stage,elapsedMs:Math.max(0,Math.min(3600000,Math.round(now-startedAt)))};
+}

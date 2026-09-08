@@ -34,9 +34,10 @@ test('oversized history fails before spending', async () => {
   assert.equal(f.calls(), 0);
 });
 test('successful response retains usage and provider identity', async () => {
-  const f = fixture(); const result = await executeChat(f.options);
+  const f = fixture(); const marks:string[]=[];const result = await executeChat({...f.options,onTimingMark:stage=>marks.push(stage)});
   assert.equal(result.text, 'Olá!'); assert.equal(result.usage.output_tokens, 3);
   assert.equal(result.providerResponseId, 'response-test'); assert.equal(f.calls(), 1);
+  assert.deepEqual(marks,['direct_provider_started','direct_provider_completed']);
 });
 test('chat keeps product identity trusted while override and extraction text stays untrusted', async () => {
   const f = fixture();
