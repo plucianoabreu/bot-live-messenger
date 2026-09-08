@@ -17,7 +17,7 @@ import { presence } from '../../domain/bots';
 import { displayPictures, defaultPicture, pictureUrl, botProfileInput } from '../../domain/profiles';
 import { isActiveRun } from '../../domain/runs';
 import { recoverCatalogPicture } from './display-picture-picker';
-import { acceptedMessagesAfterSend, browserLatencyPayload, connectionControlState, deliveredFileMarkup, deliveredFilesForMessage, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
+import { acceptedMessagesAfterSend, browserLatencyPayload, connectionControlState, deliveredFileMarkup, deliveredFilesForMessage, draftAfterSuccessfulSend, hasRenderedAssistantForRun, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
 import {
  activeMemoryVersion,collaborationStorageMode,createGenerationGate,groupFromApi,handoffLabel,handoffsForBot,
  reconcileMembershipChanges,sourceMessagesForHandoff,
@@ -267,9 +267,14 @@ function recordBrowserLatency(runId,stage,startedAt) {
 function reportRenderedLatency() {
  if(!options.latencyDiagnostics)return;
  for(const [runId,measurement] of browserLatency) {
-  if(measurement.answerReported||!host.querySelector(`[data-run-id="${runId}"]`))continue;
+  const messages=Object.values(state.messages).flat();
+  const selector=`.message.agent[data-run-id="${runId}"]`;
+  if(measurement.answerReported||!hasRenderedAssistantForRun(messages,runId)||!host.querySelector(selector))continue;
   measurement.answerReported=true;
-  window.requestAnimationFrame(()=>{recordBrowserLatency(runId,'browser_answer_dom_ready',measurement.submittedAt);browserLatency.delete(runId);});
+  window.requestAnimationFrame(()=>{
+   if(host.querySelector(selector))recordBrowserLatency(runId,'browser_answer_dom_ready',measurement.submittedAt);
+   browserLatency.delete(runId);
+  });
  }
 }
 function renderAttachments() {

@@ -33,8 +33,29 @@ test('latency tracker records elapsed durations once without conversation conten
   });
 });
 
-test('failed telemetry does not fail the conversation worker', async () => {
+test('failed telemetry does not fail the conversation worker and reports only a sanitized code', async () => {
   const tracker = createChatLatencyTracker();
-  const saved = await persistChatLatencyMeasurement({ rpc: async () => ({ error: new Error('offline') }) }, 'run-id', 1, tracker.snapshot());
+  const failures: string[] = [];
+  const saved = await persistChatLatencyMeasurement(
+    { rpc: async () => ({ data: false, error: null }) },
+    'run-id',
+    1,
+    tracker.snapshot(),
+    code => failures.push(code),
+  );
   assert.equal(saved, false);
+  assert.deepEqual(failures, ['rejected']);
+});
+
+test('successful telemetry persistence is silent', async () => {
+  const failures: string[] = [];
+  const saved = await persistChatLatencyMeasurement(
+    { rpc: async () => ({ data: true, error: null }) },
+    'run-id',
+    1,
+    createChatLatencyTracker().snapshot(),
+    code => failures.push(code),
+  );
+  assert.equal(saved, true);
+  assert.deepEqual(failures, []);
 });
