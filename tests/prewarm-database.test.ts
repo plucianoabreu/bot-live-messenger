@@ -69,6 +69,16 @@ test('prewarm fails closed when disabled or when preparation misses its own dead
   } finally { await db.close(); }
 });
 
+test('a first authenticated account receives one preparation lease without creating a fake chat run', async () => {
+ const db=await databaseWithAllMigrations();try{
+  await db.exec('select public.ensure_bots(); update public.runtime_config set runs_enabled=true,computer_enabled=true,prewarm_enabled=true;');
+  const claimed=(await db.query<{value:{status:string;lease_token:string}}>('select public.claim_hermes_prewarm($1) as value',[OWNER])).rows[0].value;
+  assert.equal(claimed.status,'preparing');
+  assert.equal((await db.query('select id from public.runs')).rows.length,0);
+  assert.equal((await db.query('select user_id from public.hermes_workspaces')).rows.length,1);
+ }finally{await db.close();}
+});
+
 test('expired ready prewarm is fenced, settled, and removed independently of a browser reopen', async () => {
   const db = await databaseWithAllMigrations();
   try {
