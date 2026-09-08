@@ -1,4 +1,7 @@
 export function initialAuthMode({recovery=false}={}) { return recovery?'login':'signup'; }
+export function signupConfirmationNotice() {
+ return 'Confirme seu e-mail para entrar. Abra o link que enviamos e confira também a pasta de spam.';
+}
 export function authLinkError(search='',hash='') {
  const query=new URLSearchParams(search);
  const fragment=new URLSearchParams(hash.replace(/^#/,''));
@@ -969,6 +972,13 @@ renderContacts();
   const initialWorkspace = structuredClone(state);
   const demo = {email:'bot@messenger.test',name:'Você',password:'messenger'};
   const rememberedEmailKey = 'agent-messenger.remembered-email';
+  const confirmationNotice=document.createElement('div');
+  confirmationNotice.id='auth-confirmation-notice';
+  confirmationNotice.className='auth-confirmation-notice';
+  confirmationNotice.setAttribute('role','status');
+  confirmationNotice.setAttribute('aria-live','polite');
+  confirmationNotice.hidden=true;
+  $('auth-error').insertAdjacentElement('beforebegin',confirmationNotice);
   let mode = initialAuthMode(options);
   let attempt = 0;
   let connecting = false;
@@ -999,6 +1009,14 @@ renderContacts();
     $('auth-error').hidden = true;
     $('auth-error').textContent = '';
     $('auth-form').querySelectorAll('[aria-invalid]').forEach(field=>field.removeAttribute('aria-invalid'));
+  }
+  function showConfirmationNotice() {
+    confirmationNotice.textContent=signupConfirmationNotice();
+    confirmationNotice.hidden=false;
+  }
+  function clearConfirmationNotice() {
+    confirmationNotice.hidden=true;
+    confirmationNotice.textContent='';
   }
   function setMode(nextMode) {
     if(connecting)return;
@@ -1082,7 +1100,7 @@ renderContacts();
         if(currentAttempt!==attempt)return;
         if(!response.ok)throw new Error(result.error);
         rememberEmail(email);
-        if(result.confirmEmail) {setConnecting(false);setMode('login');notify('Confira seu e-mail para confirmar a conta.');}
+        if(result.confirmEmail) {setConnecting(false);setMode('login');showConfirmationNotice();}
         else window.location.assign('/messenger');
       } catch(e) {if(abort.signal.aborted || currentAttempt!==attempt)return;setConnecting(false);error(e.message || 'Não foi possível entrar. Tente novamente.');}
       return;
@@ -1111,7 +1129,7 @@ renderContacts();
       }
     },750);
   });
-  $('auth-switch').onclick=()=>setMode(mode==='login'?'signup':'login');
+  $('auth-switch').onclick=()=>{clearConfirmationNotice();setMode(mode==='login'?'signup':'login');};
   $('auth-cancel').onclick=cancelConnection;
   listen($('auth-form'),'input',clearError);
   $('auth-presence').onchange=()=>$('auth-presence-dot').className=`presence-indicator ${$('auth-presence').value}`;

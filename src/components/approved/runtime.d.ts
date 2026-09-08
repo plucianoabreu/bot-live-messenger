@@ -13,4 +13,5 @@ export function prepareWelcomeMarkup(markup:string,live?:boolean):string;
 export function mountMessenger(host: HTMLElement, options: RuntimeOptions): {update(options:RuntimeOptions):void;destroy():void};
 
 export function initialAuthMode(options?:Pick<RuntimeOptions,'recovery'>):'login'|'signup';
+export function signupConfirmationNotice():string;
 export function authLinkError(search?:string,hash?:string):string|null;

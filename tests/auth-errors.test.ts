@@ -1,6 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { signupErrorResponse } from '../src/domain/auth-errors';
+import { loginErrorResponse, signupErrorResponse } from '../src/domain/auth-errors';
+
+test('unconfirmed email gets clear login guidance without looking up an account', () => {
+  assert.deepEqual(loginErrorResponse({ code: 'email_not_confirmed', status: 400 }), {
+    status: 403,
+    message: 'Confirme seu e-mail para entrar. Abra o link que enviamos e confira também a pasta de spam.',
+  });
+});
+
+test('other login failures stay generic', () => {
+  assert.deepEqual(loginErrorResponse({ code: 'invalid_credentials', status: 400 }), {
+    status: 401,
+    message: 'O e-mail ou a senha não conferem.',
+  });
+});
 
 test('email delivery rate limits tell the user to wait instead of blaming their data', () => {
   assert.deepEqual(signupErrorResponse({ code: 'over_email_send_rate_limit', status: 429 }), {
