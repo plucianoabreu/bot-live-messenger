@@ -10,7 +10,7 @@ export type RunSummary = {
   cancel_requested: boolean;
   error_code: string | null;
   created_at: string;
-  heartbeat_at: string | null;
+  started_at: string | null;
   finished_at: string | null;
 };
 export const activeRunStates: RunState[] = ['QUEUED','RUNNING','WAITING_FOR_USER'];

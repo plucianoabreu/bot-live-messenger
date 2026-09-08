@@ -4,11 +4,11 @@ export const presets = catalog.map(preset=>({...preset,avatar:pictureUrl(preset.
 export type ComputerState = 'NOT_CREATED' | 'CREATING' | 'READY' | 'PAUSED' | 'RESUMING' | 'FAILED';
 export type RunState = 'QUEUED' | 'RUNNING' | 'WAITING_FOR_USER' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
 export type Presence = 'available' | 'busy' | 'away' | 'offline';
-export type PresenceRun = {state:RunState;heartbeat_at?:string|null};
+export type PresenceRun = {state:RunState;started_at?:string|null;heartbeat_at?:string|null};
 export const busyPresenceDelayMs=120_000;
 export function isLongRunningExecution(run:PresenceRun|undefined,now=Date.now()) {
- if(run?.state!=='RUNNING'||!run.heartbeat_at)return false;
- const startedAt=Date.parse(run.heartbeat_at);
+ if(run?.state!=='RUNNING'||!run.started_at)return false;
+ const startedAt=Date.parse(run.started_at);
  // Invalid or future timestamps must not turn a bot Busy; admission remains
  // server-authoritative regardless of this visual-only state.
  return Number.isFinite(startedAt)&&startedAt<=now&&now-startedAt>=busyPresenceDelayMs;

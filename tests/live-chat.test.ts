@@ -118,9 +118,15 @@ test('delivered artifacts map to authenticated download links on refresh',async(
  assert.deepEqual(deliveredFilesForMessage(undefined),[]);
  const page=await readFile(new URL('../src/app/messenger/page.tsx',import.meta.url),'utf8');
  assert.match(page,/from\('artifacts'\).*\.in\('run_id',runIds\).*not\('delivered_at','is',null\)/);
+ assert.match(page,/from\('run_events'\).*\.in\('run_id',runIds\).*\.eq\('kind','run_started'\)/);
  assert.doesNotMatch(page,/from\('artifacts'\).*\.limit\(/);
  assert.doesNotMatch(page,/object_path/);
  assert.match(page,/if\(artifactResult\.error\)console\.error\('ARTIFACT_METADATA_UNAVAILABLE'\)/);
+});
+test('local send feedback stays in the transcript rather than the typing indicator',async()=>{
+ const runtime=await readFile(new URL('../src/components/approved/runtime.js',import.meta.url),'utf8');
+ assert.match(runtime,/Mensagem ainda não confirmada pelo servidor/);
+ assert.doesNotMatch(runtime,/Mensagem sendo enviada/);
 });
 test('delivery mapping associates runs across bots and preserves orphan artifacts',()=>{
  const messages:WorkspaceMessage[]=[

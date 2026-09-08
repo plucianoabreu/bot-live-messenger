@@ -258,7 +258,7 @@ function renderConversation(scrollToEnd = false) {
   if(options.live) {
     $('last-message').textContent=options.runsEnabled?'Conversa salva na sua conta.':'As tarefas ainda estão sendo preparadas.';
     const status={QUEUED:'Sua tarefa está na fila.',RUNNING:'O bot está trabalhando...',WAITING_FOR_USER:'O bot precisa da sua resposta.',SUCCEEDED:'Resposta concluída.',FAILED:'Não foi possível concluir a tarefa. Sua mensagem continua salva; tente novamente.',CANCELLED:'Tarefa interrompida.'};
-    $('typing-status').textContent=run?.cancel_requested&&isActiveRun(run)?'Parando...':status[run?.state]||(livePending.has(agent.id)?'Mensagem sendo enviada...':'');
+    $('typing-status').textContent=run?.cancel_requested&&isActiveRun(run)?'Parando...':status[run?.state]||'';
   }
   renderAttachments();
   reportRenderedLatency();
@@ -1234,7 +1234,7 @@ async function liveSend(event,retry){
   if(requestKeys.get(id)?.key===request.key)requestKeys.delete(id);state.drafts[id]=draftAfterSuccessfulSend(state.drafts[id],submittedDraft);
   if(state.active===id){const input=$('message-input');input.value=draftAfterSuccessfulSend(input.value,submittedDraft);state.drafts[id]=input.value;}
   state.messages[id]=reconcileOptimisticMessage(state.messages[id]||[],{id:result.messageId,idempotencyKey:request.key,content});
-  options.runs=runAfterRequest(options.runs,id,result.run||{id:result.runId,bot_id:id,kind:'chat',state:result.status||'QUEUED',cancel_requested:false,error_code:null,created_at:new Date().toISOString(),heartbeat_at:null,finished_at:null});
+  options.runs=runAfterRequest(options.runs,id,result.run||{id:result.runId,bot_id:id,kind:'chat',state:result.status||'QUEUED',cancel_requested:false,error_code:null,created_at:new Date().toISOString(),started_at:null,finished_at:null});
   if(state.active===id)renderConversation(true);
   options.refresh?.();
  }catch(e){if(!abort.signal.aborted){state.messages[id]=failOptimisticMessage(state.messages[id]||[],request.key);state.drafts[id]=draftAfterFailedSend(state.drafts[id],submittedDraft);if(state.active===id){const input=$('message-input');input.value=draftAfterFailedSend(input.value,submittedDraft);state.drafts[id]=input.value;renderConversation(true);}notify(e.message || 'Não foi possível enviar.');}}

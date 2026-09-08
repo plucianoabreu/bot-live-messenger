@@ -12,14 +12,14 @@ test('presence follows work before idle computer state',()=>{
 });
 test('Busy starts only after 120 seconds of persisted active execution',()=>{
  const start='2026-09-08T12:00:00.000Z';
- assert.equal(isLongRunningExecution({state:'RUNNING',heartbeat_at:start},Date.parse(start)+busyPresenceDelayMs-1),false);
- assert.equal(isLongRunningExecution({state:'RUNNING',heartbeat_at:start},Date.parse(start)+busyPresenceDelayMs),true);
- assert.equal(isLongRunningExecution({state:'RUNNING',heartbeat_at:'not-a-date'},Date.parse(start)+busyPresenceDelayMs),false);
- assert.equal(isLongRunningExecution({state:'RUNNING',heartbeat_at:'2026-09-08T12:03:00.000Z'},Date.parse(start)+busyPresenceDelayMs),false);
- assert.equal(presence('READY',{state:'RUNNING',heartbeat_at:start},true,Date.parse(start)+busyPresenceDelayMs-1),'available');
- assert.equal(presence('READY',{state:'RUNNING',heartbeat_at:start},true,Date.parse(start)+busyPresenceDelayMs),'busy');
- assert.equal(presence('READY',{state:'WAITING_FOR_USER',heartbeat_at:start},true,Date.parse(start)+busyPresenceDelayMs),'away');
- assert.equal(presence('READY',{state:'SUCCEEDED',heartbeat_at:start},true,Date.parse(start)+busyPresenceDelayMs),'available');
+ assert.equal(isLongRunningExecution({state:'RUNNING',started_at:start},Date.parse(start)+busyPresenceDelayMs-1),false);
+ assert.equal(isLongRunningExecution({state:'RUNNING',started_at:start},Date.parse(start)+busyPresenceDelayMs),true);
+ assert.equal(isLongRunningExecution({state:'RUNNING',started_at:'not-a-date'},Date.parse(start)+busyPresenceDelayMs),false);
+ assert.equal(isLongRunningExecution({state:'RUNNING',started_at:start,heartbeat_at:'2026-09-08T12:03:00.000Z'},Date.parse(start)+busyPresenceDelayMs),true);
+ assert.equal(presence('READY',{state:'RUNNING',started_at:start},true,Date.parse(start)+busyPresenceDelayMs-1),'available');
+ assert.equal(presence('READY',{state:'RUNNING',started_at:start},true,Date.parse(start)+busyPresenceDelayMs),'busy');
+ assert.equal(presence('READY',{state:'WAITING_FOR_USER',started_at:start},true,Date.parse(start)+busyPresenceDelayMs),'away');
+ assert.equal(presence('READY',{state:'SUCCEEDED',started_at:start},true,Date.parse(start)+busyPresenceDelayMs),'available');
 });
 test('terminal runs cannot restart or claim success after cancellation',()=>{
  assert.equal(canTransition('CANCELLED','SUCCEEDED'),false);
