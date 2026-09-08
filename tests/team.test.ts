@@ -58,6 +58,11 @@ test('team profiles are durable, scoped and idempotent; one shared computer; roo
  const snapshot=(await db.query<{bot_identity_snapshot:{name:string;role:string;description:string;instructions:string}}>('select bot_identity_snapshot from public.runs where id=$1',[root])).rows[0].bot_identity_snapshot;
  assert.deepEqual(snapshot,{name:'AI Einstein Research',role:'Research',description:'Pesquisa personalizada',instructions:'Original instructions'});
  assert.equal((await db.query<{instructions_version:number}>('select instructions_version from public.bots where id=$1',[id])).rows[0].instructions_version,2);
+ await db.exec('reset role;set role service_role;');
+ const claim=(await db.query<{value:{instructions:string;identity:{name:string}}}>('select public.claim_chat($1) as value',[root])).rows[0].value;
+ assert.equal(claim.instructions,'Original instructions');
+ assert.equal(claim.identity.name,'AI Einstein Research');
+ await asUser(A);
  const two=(await enqueue(original[0].id)).rows[0].id,three=(await enqueue(original[1].id)).rows[0].id;
  await assert.rejects(()=>enqueue(original[2].id),/USER_CONCURRENCY/);
  for(const run of [root,two,three])await db.query('select public.request_cancel($1)',[run]);

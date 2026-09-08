@@ -85,7 +85,8 @@ begin
  update public.runs set state='RUNNING',execution_version=execution_version+1,
  lease_expires_at=now()+interval '120 seconds',heartbeat_at=now() where id=r.id returning * into r;
  return jsonb_build_object('id',r.id,'user_id',r.user_id,'bot_id',r.bot_id,
- 'version',r.execution_version,'identity',r.bot_identity_snapshot,'created_at',r.created_at);
+ 'version',r.execution_version,'instructions',r.instructions_snapshot,
+ 'identity',r.bot_identity_snapshot,'created_at',r.created_at);
 end $$;
 
 create or replace function public.save_bot_profile(p_id uuid,p_name text,p_role text,p_description text,p_instructions text,p_avatar_id text,p_creation_key uuid default null)
