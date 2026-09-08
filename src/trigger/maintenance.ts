@@ -1,5 +1,7 @@
 import { Sandbox } from '@e2b/desktop';
 import { schedules } from '@trigger.dev/sdk';
+import { calculateHermesUsage, hermesUsageConfiguration } from '../server/billing/hermes-usage';
+import { workerDatabase } from '../server/execution/database';
 import { processOneAccountDeletion, supabaseAccountCleanupDependencies } from '../server/account-deletion';
 import { cleanupOneArtifactIntent, cleanupOneExpiredWatch } from '../server/computer/worker-database';
 import {
@@ -13,24 +15,48 @@ export type MaintenanceOperations = {
   cleanupArtifact(): Promise<boolean>;
   cleanupWatch(): Promise<boolean>;
   recoverHermes(): Promise<boolean>;
+  cleanupPrewarm(): Promise<boolean>;
 };
 
 export async function runMaintenance(operations: MaintenanceOperations) {
   // Start every lane through its own promise so synchronous configuration or
   // client construction failures cannot prevent the other lanes from running.
-  const [account, artifact, watch, hermes] = await Promise.allSettled([
+  const [account, artifact, watch, hermes, prewarm] = await Promise.allSettled([
     Promise.resolve().then(() => operations.cleanupAccount()),
     Promise.resolve().then(() => operations.cleanupArtifact()),
     Promise.resolve().then(() => operations.cleanupWatch()),
     Promise.resolve().then(() => operations.recoverHermes()),
+    Promise.resolve().then(() => operations.cleanupPrewarm()),
   ]);
   if (account.status === 'rejected' || artifact.status === 'rejected' ||
-      watch.status === 'rejected' || hermes.status === 'rejected') {
+      watch.status === 'rejected' || hermes.status === 'rejected' || prewarm.status === 'rejected') {
     // Each cleanup class still gets one bounded attempt. Trigger receives no
     // provider or database body that could contain private diagnostics.
     throw new Error('MAINTENANCE_PARTIAL_FAILURE');
   }
-  return { account: account.value, artifact: artifact.value, watch: watch.value, hermes: hermes.value };
+  return { account: account.value, artifact: artifact.value, watch: watch.value, hermes: hermes.value, prewarm: prewarm.value };
+}
+
+async function cleanupOneExpiredPrewarm(env: NodeJS.ProcessEnv): Promise<boolean> {
+  if (env.PREWARM_ENABLED !== 'true' || !env.E2B_API_KEY) return false;
+  const db = workerDatabase();
+  const claimed = await db.rpc('claim_expired_hermes_prewarm');
+  if (claimed.error) throw new Error('PREWARM_CLEANUP_CLAIM_FAILED');
+  if (!claimed.data) return false;
+  const claim = claimed.data as { user_id: string; machine_id: string; lease_token: string; cleanup_token: string; ready_at: string };
+  try {
+    await Sandbox.pause(claim.machine_id, { apiKey: env.E2B_API_KEY, keepMemory: false });
+    const usage = hermesUsageConfiguration(env);
+    const calculation = calculateHermesUsage({ durationMs: Math.max(0, Date.now() - new Date(claim.ready_at).getTime()), vcpuCount: usage.vcpuCount, memoryMib: usage.memoryMib, inputTokens: 0, outputTokens: 0 }, usage.rates);
+    const settled = await db.rpc('settle_hermes_prewarm', { p_lease_token: claim.lease_token, p_status: calculation.status, p_compute_cost_micros: calculation.status === 'known' ? calculation.computeCostMicros : null, p_duration_ms: Math.max(0, Date.now() - new Date(claim.ready_at).getTime()) });
+    if (settled.error || settled.data !== true) throw new Error('PREWARM_SETTLEMENT_FAILED');
+    const completed = await db.rpc('complete_expired_hermes_prewarm', { p_lease_token: claim.lease_token, p_cleanup_token: claim.cleanup_token });
+    if (completed.error || completed.data !== true) throw new Error('PREWARM_CLEANUP_FENCE_CHANGED');
+    return true;
+  } catch {
+    // Leave the fenced PAUSING lease for a bounded retry; never claim it ready.
+    return false;
+  }
 }
 
 function productionMaintenanceOperations(env: NodeJS.ProcessEnv = process.env): MaintenanceOperations {
@@ -60,6 +86,7 @@ function productionMaintenanceOperations(env: NodeJS.ProcessEnv = process.env): 
         async reconcile(claim) { await destroyOrphanHermesSandboxes(e2bApiKey, claim); },
       }));
     },
+    cleanupPrewarm: () => cleanupOneExpiredPrewarm(env),
   };
 }
 

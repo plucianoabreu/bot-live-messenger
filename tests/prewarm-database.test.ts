@@ -68,3 +68,20 @@ test('prewarm fails closed when disabled or when preparation misses its own dead
     assert.equal((await db.query('select user_id from public.hermes_prewarm_leases')).rows.length, 0);
   } finally { await db.close(); }
 });
+
+test('expired ready prewarm is fenced, settled, and removed independently of a browser reopen', async () => {
+  const db = await databaseWithAllMigrations();
+  try {
+    await db.exec(`select public.ensure_bots(); update public.runtime_config set runs_enabled=true,computer_enabled=true,prewarm_enabled=true;
+      insert into public.hermes_workspaces(user_id,machine_id,proxy_hash) values('${OWNER}','machine-expiry','${'e'.repeat(64)}');`);
+    const lease = (await db.query<{ value: { lease_token: string } }>('select public.claim_hermes_prewarm($1) as value', [OWNER])).rows[0].value;
+    await db.query('select public.complete_hermes_prewarm($1,$2,$3)', [OWNER, lease.lease_token, 'machine-expiry']);
+    await db.exec("update public.hermes_prewarm_leases set expires_at=now()-interval '1 second'");
+    const cleanup = (await db.query<{ value: { lease_token: string; cleanup_token: string; machine_id: string } }>('select public.claim_expired_hermes_prewarm() as value')).rows[0].value;
+    assert.equal(cleanup.machine_id, 'machine-expiry');
+    assert.equal((await db.query<{ ok: boolean }>('select public.settle_hermes_prewarm($1,$2,$3,$4) as ok', [cleanup.lease_token, 'known', 42, 60_000])).rows[0].ok, true);
+    assert.equal((await db.query<{ ok: boolean }>('select public.complete_expired_hermes_prewarm($1,$2) as ok', [cleanup.lease_token, cleanup.cleanup_token])).rows[0].ok, true);
+    assert.equal((await db.query('select lease_token from public.hermes_prewarm_leases')).rows.length, 0);
+    assert.equal((await db.query('select lease_token from public.hermes_prewarm_settlements')).rows.length, 1);
+  } finally { await db.close(); }
+});
