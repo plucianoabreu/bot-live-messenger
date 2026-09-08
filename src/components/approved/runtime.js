@@ -1,3 +1,4 @@
+export function initialAuthMode({recovery=false}={}) { return recovery?'login':'signup'; }
 // DOM controller ported from the approved prototype, isolated to one React-owned host.
 // Mock behavior is restricted to the explicit demonstration; live mode uses authorized APIs.
 import { presence } from '../../domain/bots';
@@ -959,7 +960,7 @@ renderContacts();
   const initialWorkspace = structuredClone(state);
   const demo = {email:'bot@messenger.test',name:'Você',password:'messenger'};
   const rememberedEmailKey = 'agent-messenger.remembered-email';
-  let mode = 'login';
+  let mode = initialAuthMode(options);
   let attempt = 0;
   let connecting = false;
   let demoAttempt = false;
