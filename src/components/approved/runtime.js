@@ -17,7 +17,7 @@ import { presence } from '../../domain/bots';
 import { displayPictures, defaultPicture, pictureUrl, botProfileInput } from '../../domain/profiles';
 import { isActiveRun } from '../../domain/runs';
 import { recoverCatalogPicture } from './display-picture-picker';
-import { acceptedMessagesAfterSend, connectionControlState, deliveredFileMarkup, deliveredFilesForMessage, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
+import { acceptedMessagesAfterSend, browserLatencyPayload, connectionControlState, deliveredFileMarkup, deliveredFilesForMessage, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
 import {
  activeMemoryVersion,collaborationStorageMode,createGenerationGate,groupFromApi,handoffLabel,handoffsForBot,
  reconcileMembershipChanges,sourceMessagesForHandoff,
@@ -101,6 +101,7 @@ const setTimeout=(callback,delay)=>{const id=window.setTimeout(()=>{timers.delet
 const clearTimeout=id=>{window.clearTimeout(id);timers.delete(id);};
 const livePending=new Set();
 const requestKeys=new Map();
+const browserLatency=new Map();
 const previousScene=document.body.dataset.scene;
 const collaborationMode=()=>collaborationStorageMode(Boolean(options.live));
 
@@ -220,7 +221,7 @@ function renderConversation(scrollToEnd = false) {
   $('conversation-profile').innerHTML = `<div class="agent-title">${escapeHTML(agent.name)} <small>(${statusLabels[agent.status]})</small></div><div class="agent-description">${escapeHTML(agent.description)}</div>`;
   $('messages').innerHTML = messages.map(message => {
     if (message.author === 'system') return `<div class="message system"><span class="system-time">${message.time || ''}</span>${escapeHTML(message.text)}</div>`;
-    return `<div class="message ${message.author}"><div class="message-author">${message.author === 'user' ? 'Você' : escapeHTML(agent.name)} diz:</div><div class="message-text ${message.bold ? 'bold' : ''}">${escapeHTML(message.text)}</div>${(message.files || []).map(file => file.href
+    return `<div class="message ${message.author}"${message.runId ? ` data-run-id="${escapeHTML(message.runId)}"` : ''}><div class="message-author">${message.author === 'user' ? 'Você' : escapeHTML(agent.name)} diz:</div><div class="message-text ${message.bold ? 'bold' : ''}">${escapeHTML(message.text)}</div>${(message.files || []).map(file => file.href
       ? deliveredFileMarkup(file,prettySize(file.size))
       : `<span class="message-file"><img src="/assets/folder.svg" alt=""><span><strong>${escapeHTML(file.name)}</strong><small>${prettySize(file.size)} · Anexo local</small></span></span>`).join('')}</div>`;
   }).join('');
@@ -255,6 +256,21 @@ function renderConversation(scrollToEnd = false) {
     $('typing-status').textContent=run?.cancel_requested&&isActiveRun(run)?'Parando...':status[run?.state]||'';
   }
   renderAttachments();
+  reportRenderedLatency();
+}
+
+function recordBrowserLatency(runId,stage,startedAt) {
+ if(!options.latencyDiagnostics)return;
+ const payload=browserLatencyPayload(stage,startedAt,performance.now());
+ void fetch(`/api/runs/${encodeURIComponent(runId)}/latency`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),keepalive:true}).catch(()=>undefined);
+}
+function reportRenderedLatency() {
+ if(!options.latencyDiagnostics)return;
+ for(const [runId,measurement] of browserLatency) {
+  if(measurement.answerReported||!host.querySelector(`[data-run-id="${runId}"]`))continue;
+  measurement.answerReported=true;
+  window.requestAnimationFrame(()=>{recordBrowserLatency(runId,'browser_answer_dom_ready',measurement.submittedAt);browserLatency.delete(runId);});
+ }
 }
 function renderAttachments() {
   const files = state.attachments[state.active] || [];
@@ -1184,12 +1200,15 @@ async function liveSend(event){
  if(!id || !options.runsEnabled || livePending.has(id) || isActiveRun(runs[id]))return;
  const submittedDraft=$('message-input').value;
  const content=submittedDraft.trim();if(!content)return;
+ const submittedAt=performance.now();
  if(requestKeys.get(id)?.content!==content)requestKeys.set(id,{content,key:crypto.randomUUID()});
  livePending.add(id);renderConversation();
  try{
   const response=await fetch(`/api/bots/${id}/messages`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content,idempotencyKey:requestKeys.get(id).key}),signal:abort.signal});
   const result=await response.json();if(!response.ok)throw new Error(result.error);
   if(abort.signal.aborted)return;
+  browserLatency.set(result.runId,{submittedAt,answerReported:false});
+  recordBrowserLatency(result.runId,'browser_admission_received',submittedAt);
   requestKeys.delete(id);state.drafts[id]=draftAfterSuccessfulSend(state.drafts[id],submittedDraft);
   if(state.active===id){const input=$('message-input');input.value=draftAfterSuccessfulSend(input.value,submittedDraft);state.drafts[id]=input.value;}
   state.messages[id]=acceptedMessagesAfterSend(state.messages[id]||[],{id:result.messageId,content});
@@ -1218,7 +1237,7 @@ async function liveSignOut(){
 function syncLive(){
  if(!options.live)return;
  agents.splice(0,agents.length,...(options.bots||[]).map(bot=>({...bot,avatar:portraitUrl(bot.avatar_id),status:presence(bot.computer_state,bot.run_state,bot.enabled)})));
- state.messages=Object.fromEntries(Object.entries(options.messages||{}).map(([id,list])=>[id,list.map(m=>({id:m.id,author:m.role==='assistant'?'agent':m.role,text:m.content,time:new Date(m.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),files:deliveredFilesForMessage(m.artifacts)}))]));
+ state.messages=Object.fromEntries(Object.entries(options.messages||{}).map(([id,list])=>[id,list.map(m=>({id:m.id,runId:m.run_id,author:m.role==='assistant'?'agent':m.role,text:m.content,time:new Date(m.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),files:deliveredFilesForMessage(m.artifacts)}))]));
  state.userAvatarId=options.userAvatarId||defaultPicture;renderUserPictures();
  state.instructions=Object.fromEntries(agents.map(b=>[b.id,b.instructions]));
  state.jobs.clear();Object.entries(options.runs||options.activeRuns||{}).filter(([,run])=>isActiveRun(run)).forEach(([id,run])=>state.jobs.set(id,run.id));

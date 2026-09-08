@@ -20,6 +20,7 @@ export async function GET(request:Request,{params}:{params:Promise<{id:string}>}
  return Response.json({messages,nextCursor:messages.at(-1)?.sequence??page.after,hasMore},{headers:noStore});
 }
 export async function POST(request:Request,{params}:{params:Promise<{id:string}>}) {
+ const admissionStartedAt=performance.now();
  if(!sameOrigin(request))return Response.json({error:'Origem inválida.'},{status:403});
  const auth=await requireUser();if(auth.response)return auth.response;
  const {id}=await params;if(!z.uuid().safeParse(id).success)return Response.json({error:'Contato inválido.'},{status:400});
@@ -38,8 +39,14 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
   const [status,message]=Object.entries(errors).find(([code])=>error.message.includes(code))?.[1]??[500,'Não foi possível enviar. Tente novamente.'];
   return Response.json({error:message},{status});
  }
+ const recordAdmission=async(stage:'admission_enqueued'|'dispatch_completed')=>{
+  if(process.env.LATENCY_DIAGNOSTICS!=='true')return;
+  const elapsedMs=Math.max(0,Math.min(3600000,Math.round(performance.now()-admissionStartedAt)));
+  try{await auth.db.rpc('record_chat_latency_client_measurement',{p_run_id:data,p_stage:stage,p_elapsed_ms:elapsedMs});}catch{/* Diagnostics never change admission. */}
+ };
+ await recordAdmission('admission_enqueued');
  // Committed runs remain in the outbox if dispatch fails. The reconciler can recover them.
- try { await tasks.trigger<typeof chatTask>('bot-messenger-chat',{runId:data},{idempotencyKey:data}); }
+ try { await tasks.trigger<typeof chatTask>('bot-messenger-chat',{runId:data},{idempotencyKey:data});await recordAdmission('dispatch_completed'); }
  catch { console.error('CHAT_DISPATCH_PENDING'); }
  const [runResult,messageResult]=await Promise.all([
   auth.db.from('runs').select('id,bot_id,kind,state,cancel_requested,error_code,created_at,finished_at').eq('id',data).single(),

@@ -19,6 +19,7 @@ import {
   createHermesSettlement,
   hermesUsageConfiguration,
 } from '../billing/hermes-usage';
+import type { ChatLatencyStage } from './chat-latency';
 
 const TERMINAL_HERMES_STATES = new Set(['completed', 'failed', 'cancelled']);
 
@@ -67,7 +68,7 @@ export async function destroyAmbiguousHermesRuntime(input: {
   await input.releaseDestroyed();
 }
 
-export async function executeHermes(input: { runId: string; version: number; ownerId: string; botId: string; instructions: string; message: string; model: string; signal: AbortSignal }) {
+export async function executeHermes(input: { runId: string; version: number; ownerId: string; botId: string; instructions: string; message: string; model: string; signal: AbortSignal; onTimingMark?: (stage: Extract<ChatLatencyStage, 'hermes_workspace_claimed' | 'hermes_provision_started' | 'hermes_resume_started' | 'hermes_sandbox_ready' | 'hermes_remote_started' | 'hermes_remote_completed'>) => void }) {
   const key = process.env.E2B_API_KEY;
   const template = process.env.HERMES_TEMPLATE_ID;
   const gateway = process.env.HERMES_MODEL_GATEWAY_URL;
@@ -101,6 +102,7 @@ export async function executeHermes(input: { runId: string; version: number; own
     ({ data: binding, error } = await claim());
   }
   if (error || !binding || binding.status !== 'claimed' || binding.user_id !== input.ownerId || binding.active_run !== input.runId || binding.active_execution_version !== input.version) throw new Error('HERMES_WORKSPACE_UNAVAILABLE');
+  input.onTimingMark?.('hermes_workspace_claimed');
   let machineId: string | undefined = binding.machine_id;
   let machineBindingPersisted = Boolean(binding.machine_id);
   let provisionCleanupRequired = false;
@@ -156,6 +158,7 @@ export async function executeHermes(input: { runId: string; version: number; own
   };
   try {
     if (!machineId) {
+      input.onTimingMark?.('hermes_provision_started');
       const created = await provisionHermes(
         new HermesE2BFactory(key, template, 120_000, networkPolicy, resourceShape),
         input.ownerId,
@@ -174,17 +177,20 @@ export async function executeHermes(input: { runId: string; version: number; own
       }
       machineBindingPersisted = true;
       client = new HermesClient(created);
+      input.onTimingMark?.('hermes_sandbox_ready');
     } else {
       if (binding.provision_cleanup_required || typeof binding.base_url !== 'string' ||
           !/^[a-f0-9]{64}$/.test(String(binding.api_key))) {
         throw new Error('HERMES_WORKSPACE_INCOMPLETE');
       }
+      input.onTimingMark?.('hermes_resume_started');
       const sandbox = await connectHermesE2B(key, machineId, networkPolicy, resourceShape);
       await rotateHermesGatewayToken(sandbox.files, token, { gatewayUrl: gateway, apiServerKey: binding.api_key });
       await sandbox.commands.run(`chmod 600 ${HERMES_LAUNCH_PATH}`, { user: 'root', timeoutMs: 10_000 });
       await sandbox.commands.run(HERMES_LAUNCH_COMMAND, { user: 'root', background: true, timeoutMs: 0 });
       await sandbox.commands.run('python3 /opt/blm-hermes-ready.py', { user: 'root', timeoutMs: 50_000 });
       client = new HermesClient({ ownerId: input.ownerId, baseUrl: binding.base_url, apiKey: binding.api_key, trafficAccessToken: sandbox.trafficAccessToken! });
+      input.onTimingMark?.('hermes_sandbox_ready');
     }
     const startMarked = await db.rpc('begin_hermes_remote_start', {
       p_run_id: input.runId,
@@ -206,10 +212,12 @@ export async function executeHermes(input: { runId: string; version: number; own
       p_remote_run: remote,
     });
     if (remoteSaved.error || !remoteSaved.data) throw new Error('HERMES_RUN_SAVE_FAILED');
+    input.onTimingMark?.('hermes_remote_started');
     for (;;) {
       const state = await client.read(remote, input.signal);
       if (TERMINAL_HERMES_STATES.has(state.status)) {
         terminal = true;
+        input.onTimingMark?.('hermes_remote_completed');
         if (state.status !== 'completed' || !state.output?.trim() || !state.usage) throw new Error('HERMES_RUN_FAILED');
         observedUsage = state.usage;
         const delivered = contract.parse(state.output);

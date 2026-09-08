@@ -13,6 +13,7 @@ export type RuntimeOptions = {
  userAvatarId?: string;
  runsEnabled?: boolean;
  watchEnabled?: boolean;
+ latencyDiagnostics?: boolean;
  runs?: Record<string,RunSummary>;
  /** Transitional compatibility for callers created before canonical run reads. */
  activeRuns?: Record<string,{id:string;cancel_requested:boolean;state?:RunSummary['state']}>;

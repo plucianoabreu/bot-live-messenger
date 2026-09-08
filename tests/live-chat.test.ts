@@ -11,7 +11,8 @@ import {
  deliveredFilesForMessage,
  draftAfterSuccessfulSend,
  liveComposerState,
- liveEntryState,
+  liveEntryState,
+  browserLatencyPayload,
  runAfterRequest,
  v1VisibleMenuItems,
 } from '../src/components/approved/live-runtime';
@@ -28,6 +29,12 @@ test('sequence cursors and live polling reject ambiguous input and track active 
  assert.equal(isActiveRun({state:'CANCELLED'}),false);
  assert.equal(livePollInterval({a:{state:'RUNNING'}}),2000);
  assert.equal(livePollInterval({a:{state:'SUCCEEDED'}}),10000);
+});
+
+test('browser latency payload is bounded and contains no conversation data',()=>{
+ assert.deepEqual(browserLatencyPayload('browser_admission_received',100,112.4),{stage:'browser_admission_received',elapsedMs:12});
+ assert.deepEqual(browserLatencyPayload('browser_answer_dom_ready',100,99),{stage:'browser_answer_dom_ready',elapsedMs:0});
+ assert.deepEqual(browserLatencyPayload('browser_answer_dom_ready',0,3600001),{stage:'browser_answer_dom_ready',elapsedMs:3600000});
 });
 
 test('successful send clears only the exact submitted draft',()=>{

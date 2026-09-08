@@ -30,5 +30,5 @@ export default async function MessengerPage(){
  const history:Record<string,Message[]>={};for(const message of hydratedMessages)(history[message.bot_id]??=[]).push(message);
  const latestRuns:Record<string,RunSummary>={};for(const run of runResult.data??[]){if(!latestRuns[run.bot_id])latestRuns[run.bot_id]=run as RunSummary;}
  const bots=(botResult.data??[]).map(b=>({...b,computer_state:computerResult.data.state,run_state:latestRuns[b.id]?.state})) as Bot[];
- return <ApprovedMessenger live bots={bots} messages={history} runs={latestRuns} userName={user.user_metadata?.full_name??'Você'} userId={user.id} userAvatarId={profileResult.data.avatar_id} runsEnabled={process.env.RUNS_ENABLED==='true'} watchEnabled={process.env.RUNS_ENABLED==='true'&&process.env.COMPUTER_ENABLED==='true'&&process.env.WATCH_ENABLED==='true'}/>;
+ return <ApprovedMessenger live bots={bots} messages={history} runs={latestRuns} userName={user.user_metadata?.full_name??'Você'} userId={user.id} userAvatarId={profileResult.data.avatar_id} runsEnabled={process.env.RUNS_ENABLED==='true'} watchEnabled={process.env.RUNS_ENABLED==='true'&&process.env.COMPUTER_ENABLED==='true'&&process.env.WATCH_ENABLED==='true'} latencyDiagnostics={process.env.LATENCY_DIAGNOSTICS==='true'}/>;
 }
