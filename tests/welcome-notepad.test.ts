@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {
- createDesktopShortcutSelection,prepareWelcomeMarkup,readWelcomePreference,welcomeDocumentState,welcomeMenuState,
+ createDesktopShortcutSelection,prepareV1Markup,prepareWelcomeMarkup,readWelcomePreference,welcomeDocumentState,welcomeMenuState,
  welcomePreferenceKey,writeWelcomePreference,
 } from '../src/components/approved/runtime.js';
 import {approvedMarkup} from '../src/components/approved/markup';
@@ -52,23 +52,31 @@ test('welcome guide and persistent disclosure match actual runtime availability'
  const demo=welcomeDocumentState();
  assert.equal(demo.mode,'demo');
  assert.match(demo.disclosure,/Demonstração local: conversas e tarefas são simuladas/);
- assert.match(demo.guide,/O computador não faz parte da demonstração/);
- assert.doesNotMatch(demo.guide,/computador em Acompanhar\./);
+ assert.doesNotMatch(demo.guide,/computador|Acompanhar|grupo|delega/i);
 
  const preparing=welcomeDocumentState({live:true,runsEnabled:false,watchAvailable:false});
  assert.equal(preparing.mode,'live');
- assert.match(preparing.disclosure,/tarefas e Acompanhar ainda estão em preparação/);
- assert.match(preparing.guide,/As tarefas e o computador ainda estão em preparação/);
- assert.doesNotMatch(preparing.guide,/computador em Acompanhar\./);
+ assert.match(preparing.disclosure,/tarefas ainda estão em preparação/);
+ assert.doesNotMatch(preparing.guide,/Acompanhar|grupo|delega/i);
 
  const withoutWatch=welcomeDocumentState({live:true,runsEnabled:true,watchAvailable:false});
- assert.match(withoutWatch.disclosure,/Acompanhar ainda não está disponível/);
- assert.match(withoutWatch.guide,/Acompanhar o computador ainda não está disponível/);
- assert.doesNotMatch(withoutWatch.guide,/computador em Acompanhar\./);
+ assert.match(withoutWatch.disclosure,/conversas e tarefas estão disponíveis/);
+ assert.doesNotMatch(withoutWatch.guide,/Acompanhar|grupo|delega/i);
 
  const withWatch=welcomeDocumentState({live:true,runsEnabled:true,watchAvailable:true});
- assert.match(withWatch.disclosure,/tarefas e Acompanhar estão disponíveis/);
- assert.match(withWatch.guide,/computador em Acompanhar\./);
+ assert.equal(withWatch.disclosure,withoutWatch.disclosure);
+ assert.equal(withWatch.guide,withoutWatch.guide);
+});
+
+test('V1 markup removes conversation export and excluded promises but keeps file downloads',()=>{
+ const prepared=prepareV1Markup(approvedMarkup);
+ assert.doesNotMatch(prepared,/data-command="history"/);
+ assert.doesNotMatch(prepared,/Bots que colaboram|Acompanhe o trabalho|computador para trabalhar|sua equipe trabalha|delegar etapas|Em construção: IA real|execução no computador/i);
+ assert.match(prepared,/BOTS DE IA PARA CONVERSAR COM VOCÊ/);
+ assert.match(prepared,/Conta conectada: a disponibilidade das tarefas aparece depois de entrar/);
+ assert.match(prepared,/data-command="attach"/);
+ assert.match(prepared,/id="dialog-download"/);
+ assert.match(prepared,/id="welcome-download"/);
 });
 
 test('notepad menu state follows selection, wrapping, and font boundaries',()=>{

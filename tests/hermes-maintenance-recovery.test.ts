@@ -16,7 +16,8 @@ const migrations = [
   '20260906210000_live_chat_updates', '20260906220000_computer_foundation',
   '20260906230000_account_cleanup', '20260907163853_hermes_runtime',
   '20260907170000_hermes_artifacts_lifecycle', '20260907180000_hermes_security_recovery',
-  '20260907190000_hermes_lifecycle_hardening',
+  '20260907190000_hermes_lifecycle_hardening', '20260907191000_hermes_usage_settlement',
+  '20260907220000_hermes_crash_settlement',
 ];
 
 async function database() {
@@ -105,6 +106,36 @@ test('partial provisioning is explicitly destroyed and its unusable binding is c
     await db.exec('reset role;');
     const cleared = (await db.query<{ machine_id: null; active_run: null; provision_cleanup_required: boolean }>(
       'select machine_id,active_run,provision_cleanup_required from public.hermes_workspaces',
+    )).rows[0];
+    assert.deepEqual(cleared, { machine_id: null, active_run: null, provision_cleanup_required: false });
+  } finally { await db.close(); }
+});
+
+test('an incompatible resumed machine is durably marked for destroy recovery', async () => {
+  const db = await database();
+  try {
+    const active = await claimedRun(db);
+    const proxy = 'f'.repeat(64);
+    await db.query('select public.claim_hermes_workspace($1,$2,$3)', [active.run, active.version, proxy]);
+    await db.exec(`reset role;update public.hermes_workspaces set machine_id='machine-wrong-shape',
+      base_url='https://runtime.example',api_key='${'b'.repeat(64)}',revision='r1';set role service_role;`);
+    assert.equal((await db.query<{ ok: boolean }>(
+      'select public.record_failed_hermes_provision($1,$2,$3,$4) as ok',
+      [active.run, active.version, proxy, 'machine-wrong-shape'],
+    )).rows[0].ok, true);
+    await db.exec("reset role;update public.runs set lease_expires_at=now()-interval '1 second';set role service_role;select public.reconcile_chats();");
+    const recovery = (await db.query<{ value: StaleHermesRecoveryClaim }>(
+      'select public.claim_stale_hermes_recovery() as value',
+    )).rows[0].value;
+    assert.equal(recovery.machine_id, 'machine-wrong-shape');
+    assert.equal(recovery.recovery_action, 'destroy');
+    assert.equal((await db.query<{ ok: boolean }>(
+      'select public.complete_hermes_recovery($1,$2,$3,$4) as ok',
+      [OWNER, active.run, active.version, recovery.recovery_token],
+    )).rows[0].ok, true);
+    await db.exec('reset role;');
+    const cleared = (await db.query<{ machine_id: null; active_run: null; provision_cleanup_required: boolean }>(
+      'select machine_id,active_run,provision_cleanup_required from public.hermes_workspaces where user_id=$1', [OWNER],
     )).rows[0];
     assert.deepEqual(cleared, { machine_id: null, active_run: null, provision_cleanup_required: false });
   } finally { await db.close(); }

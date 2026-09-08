@@ -3,7 +3,8 @@
 import { presence } from '../../domain/bots';
 import { displayPictures, defaultPicture, pictureUrl, botProfileInput } from '../../domain/profiles';
 import { isActiveRun } from '../../domain/runs';
-import { draftAfterSuccessfulSend, liveEntryState, runAfterRequest } from './live-runtime';
+import { recoverCatalogPicture } from './display-picture-picker';
+import { acceptedMessagesAfterSend, connectionControlState, deliveredFileMarkup, deliveredFilesForMessage, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
 import {
  activeMemoryVersion,collaborationStorageMode,createGenerationGate,groupFromApi,handoffLabel,handoffsForBot,
  reconcileMembershipChanges,sourceMessagesForHandoff,
@@ -18,35 +19,36 @@ export function writeWelcomePreference(storage,{live,userId},open) {
  if(!live||!userId)return;
  try{storage.setItem(welcomePreferenceKey(userId),open?'open':'closed');}catch{/* Presentation preferences are optional when storage is unavailable. */}
 }
-export function welcomeDocumentState({live=false,runsEnabled=false,watchAvailable=false}={}) {
- const tracking=watchAvailable
-  ? '5. Acompanhe o andamento na conversa e o computador em Acompanhar.'
-  : live&&runsEnabled
-   ? '5. Acompanhe o andamento na conversa. Acompanhar o computador ainda não está disponível.'
-   : live
-    ? '5. Acompanhe o andamento na conversa. As tarefas e o computador ainda estão em preparação.'
-    : '5. Acompanhe o andamento na conversa. O computador não faz parte da demonstração.';
- const controls=live&&!runsEnabled
-  ? '6. Quando as tarefas forem habilitadas, você poderá usar Parar.\n7. Os arquivos entregues poderão ser baixados pela conversa.'
+export function welcomeDocumentState({live=false,runsEnabled=false}={}) {
+ const tracking=live&&runsEnabled
+  ? '4. Confira o andamento na conversa.'
   : live
-   ? '6. Use Parar quando quiser interromper uma tarefa.\n7. Confira a resposta e baixe os arquivos entregues.'
-   : '6. Use Parar para interromper uma tarefa simulada.\n7. Confira a resposta simulada na conversa.';
+   ? '4. As tarefas reais ainda estão em preparação.'
+   : '4. Confira a resposta simulada na conversa.';
+ const controls=live&&!runsEnabled
+  ? '5. Quando as tarefas forem habilitadas, você poderá usar Parar.'
+  : live
+   ? '5. Use Parar quando quiser interromper uma tarefa.'
+   : '5. Use Parar para interromper uma tarefa simulada.\n6. Confira a resposta simulada na conversa.';
  const context=live
-  ? '8. Volte à conversa para continuar: seus bots guardam o contexto.'
-  : '8. Volte à conversa para continuar enquanto esta demonstração estiver aberta.';
+  ? '6. Volte à conversa para continuar com o histórico salvo e baixar arquivos entregues.'
+  : '7. Volte à conversa para continuar enquanto esta demonstração estiver aberta.';
  const disclosure=!live
   ? 'Demonstração local: conversas e tarefas são simuladas; nenhum trabalho é executado no computador.'
-  : watchAvailable
-   ? 'Conta conectada: conversas, tarefas e Acompanhar estão disponíveis.'
-   : runsEnabled
-    ? 'Conta conectada: conversas e tarefas estão disponíveis; Acompanhar ainda não está disponível.'
-    : 'Conta conectada: conversas salvas; tarefas e Acompanhar ainda estão em preparação.';
+  : runsEnabled
+   ? 'Conta conectada: conversas e tarefas estão disponíveis.'
+   : 'Conta conectada: conversas salvas; tarefas ainda estão em preparação.';
+ const availability=live&&!runsEnabled
+  ? '\n\nMODO ATUAL\nAs tarefas reais ainda não estão disponíveis nesta conta. Para testar uma conversa agora, saia e escolha a demonstração local.'
+  : live
+   ? '\n\nLIMITES DO PILOTO\nSua conta pode iniciar até 5 tarefas de chat durante este piloto. O saldo restante ainda não aparece nesta tela.'
+   : '';
  return {mode:live?'live':'demo',disclosure,guide:`COMO USAR O BOT MESSENGER
+${availability}
 
 1. Escolha um bot na lista e abra a conversa.
 2. Diga o que você precisa e como quer receber o resultado.
 3. Para criar um bot, clique em Adicionar bot e defina sua função.
-4. Crie um grupo para os bots trabalharem juntos.
 ${tracking}
 ${controls}
 ${context}
@@ -66,6 +68,16 @@ export function prepareWelcomeMarkup(markup,live=false) {
  if(!prepared.includes('id="welcome-mode-disclosure"'))prepared=prepared.replace('<textarea id="welcome-text"',
   `<div id="welcome-mode-disclosure" class="welcome-mode-disclosure" role="status" aria-live="polite">${disclosure}</div><textarea id="welcome-text"`);
  return prepared;
+}
+export function prepareV1Markup(markup) {
+ return markup
+  .replace(/<button\b[^>]*data-command="history"[^>]*>[\s\S]*?<\/button>/g,'')
+  .replace('BOTS DE IA COM UM COMPUTADOR PARA TRABALHAR POR VOCÊ.','BOTS DE IA PARA CONVERSAR COM VOCÊ.')
+  .replace('• Você pede. Sua equipe trabalha na tarefa.','• Você conversa diretamente com cada bot.')
+  .replace('O QUE ESTAMOS CONSTRUINDO\n• Um computador na nuvem para seus bots.\n• Pesquisa em sites e trabalho com arquivos.\n• Relatórios, planilhas e apresentações.\n• Bots que colaboram e compartilham contexto.','O QUE VOCÊ PODE TESTAR\n• Conversas diretas com bots especialistas.\n• Bots personalizados com funções e instruções próprias.')
+  .replace('• Quem quer delegar etapas do trabalho.\n','')
+  .replace('3. Acompanhe o trabalho na conversa.','3. Confira a resposta na conversa.')
+  .replace('• Hoje: interface, personalização e respostas simuladas.\n• Em construção: IA real e execução no computador.','• Conta conectada: a disponibilidade das tarefas aparece depois de entrar.\n• Demonstração local: respostas simuladas, sem execução externa.');
 }
 export function mountMessenger(host, initialOptions = {}) {
 let options=initialOptions;
@@ -146,7 +158,6 @@ function contactGroups() {
   return [
     {id:'favorites',name:'Favoritos',ids:agents.filter(a => isFavorite(a.id)).map(a => a.id)},
     {id:'agents',name:'Bots',ids:agents.filter(a => a.status !== 'offline').map(a => a.id)},
-    ...state.customGroups,
     ...(state.showOffline ? [{id:'offline',name:'Offline',ids:agents.filter(a => a.status === 'offline').map(a => a.id)}] : [])
   ];
 }
@@ -187,7 +198,9 @@ function renderConversation(scrollToEnd = false) {
   $('conversation-profile').innerHTML = `<div class="agent-title">${escapeHTML(agent.name)} <small>(${statusLabels[agent.status]})</small></div><div class="agent-description">${escapeHTML(agent.description)}</div>`;
   $('messages').innerHTML = messages.map(message => {
     if (message.author === 'system') return `<div class="message system"><span class="system-time">${message.time || ''}</span>${escapeHTML(message.text)}</div>`;
-    return `<div class="message ${message.author}"><div class="message-author">${message.author === 'user' ? 'Você' : escapeHTML(agent.name)} diz:</div><div class="message-text ${message.bold ? 'bold' : ''}">${escapeHTML(message.text)}</div>${(message.files || []).map(file => `<span class="message-file"><img src="/assets/folder.svg" alt=""><span><strong>${escapeHTML(file.name)}</strong><small>${prettySize(file.size)} · Anexo local</small></span></span>`).join('')}</div>`;
+    return `<div class="message ${message.author}"><div class="message-author">${message.author === 'user' ? 'Você' : escapeHTML(agent.name)} diz:</div><div class="message-text ${message.bold ? 'bold' : ''}">${escapeHTML(message.text)}</div>${(message.files || []).map(file => file.href
+      ? deliveredFileMarkup(file,prettySize(file.size))
+      : `<span class="message-file"><img src="/assets/folder.svg" alt=""><span><strong>${escapeHTML(file.name)}</strong><small>${prettySize(file.size)} · Anexo local</small></span></span>`).join('')}</div>`;
   }).join('');
   if (scrollToEnd || wasAtBottom) messagePane.scrollTop = messagePane.scrollHeight;
   else messagePane.scrollTop = oldScroll;
@@ -195,11 +208,17 @@ function renderConversation(scrollToEnd = false) {
   const run=runs[agent.id];
   const pending = options.live ? isActiveRun(run) || livePending.has(agent.id) : state.jobs.has(agent.id);
   const offline = agent.status === 'offline';
-  $('connection-notice').hidden = !offline;
-  $('connection-notice').innerHTML = offline ? `<span>ⓘ ${escapeHTML(agent.name)} está offline.</span><button data-command="connect">Conectar bot</button>` : '';
+  const composer=liveComposerState({offline,pending,live:Boolean(options.live),runsEnabled:Boolean(options.runsEnabled)});
+  const connection=connectionControlState({live:Boolean(options.live),offline});
+  $('connection-notice').hidden = !offline&&!composer.runtimeUnavailable;
+  $('connection-notice').innerHTML = offline
+   ? `<span>ⓘ ${escapeHTML(agent.name)} ${options.live?'está indisponível nesta conta. Tente outro bot.':'está offline.'}</span>${connection.showInlineConnect?'<button data-command="connect">Conectar bot</button>':''}`
+   : composer.runtimeUnavailable
+    ? '<span>ⓘ As tarefas reais ainda não estão disponíveis nesta conta. Para testar uma conversa agora, saia e escolha a demonstração local.</span>'
+    : '';
   $('typing-status').textContent = pending ? `${agent.name} está trabalhando na sua solicitação...` : '';
-  $('message-input').disabled = offline;
-  $('send').disabled = offline || pending || (options.live && !options.runsEnabled);
+  $('message-input').disabled = composer.inputDisabled;
+  $('send').disabled = composer.sendDisabled;
   $('stop-task').disabled = !pending || (options.live && (!run || run.cancel_requested));
   $('nudge').disabled = offline;
   $('favorite-button').querySelector('span:last-child').textContent = isFavorite(agent.id) ? 'Favorito' : 'Favoritar';
@@ -210,7 +229,7 @@ function renderConversation(scrollToEnd = false) {
   $('last-message').textContent = lastMessage?.time ? `Última mensagem recebida às ${lastMessage.time} · Bot simulado` : 'Esta é uma conversa com um bot de IA.';
   if(options.live) {
     $('last-message').textContent=options.runsEnabled?'Conversa salva na sua conta.':'As tarefas ainda estão sendo preparadas.';
-    const status={QUEUED:'Sua tarefa está na fila.',RUNNING:'O bot está trabalhando...',WAITING_FOR_USER:'O bot precisa da sua resposta.',SUCCEEDED:'Resposta concluída.',FAILED:'Não foi possível concluir a tarefa.',CANCELLED:'Tarefa interrompida.'};
+    const status={QUEUED:'Sua tarefa está na fila.',RUNNING:'O bot está trabalhando...',WAITING_FOR_USER:'O bot precisa da sua resposta.',SUCCEEDED:'Resposta concluída.',FAILED:'Não foi possível concluir a tarefa. Sua mensagem continua salva; tente novamente.',CANCELLED:'Tarefa interrompida.'};
     $('typing-status').textContent=run?.cancel_requested&&isActiveRun(run)?'Parando...':status[run?.state]||'';
   }
   renderAttachments();
@@ -371,7 +390,7 @@ function closeMenu() {
 }
 function showMenu(anchor,items,point) {
   closeMenu(); menuAnchor = anchor; menuActions = [];
-  $('popup-menu').innerHTML = items.map(item => {
+  $('popup-menu').innerHTML = v1VisibleMenuItems(items).map(item => {
     if (item.separator) return '<div class="menu-separator" role="separator"></div>';
     if (item.caption) return `<div class="menu-caption">${escapeHTML(item.caption)}</div>`;
     const index = menuActions.push(item.action) - 1;
@@ -409,10 +428,11 @@ function contactMenu(id,anchor,point) {
     {label:'Editar instruções...',action:() => openInstructions(id)},
     {label:'Ver perfil...',action:() => openAgentDetails(id)},
     {label:'Ver memória...',action:() => openMemoryDialog(id)},
-    {label:options.live?'Ver delegações...':'Ver atividade...',action:() => options.live?openHandoffs(id):openActivity(id)},
-    {separator:true},
-    {label:agent.status==='offline'?'Conectar bot':'Desconectar bot',disabled:state.jobs.has(id),action:() => toggleConnection(id)},
-    {label:'Mover para um grupo...',action:() => openGroupAssignment(id)}
+    {label:'Ver atividade...',action:() => openActivity(id)},
+    ...(connectionControlState({live:Boolean(options.live),offline:agent.status==='offline'}).showToggle
+      ? [{separator:true},{label:agent.status==='offline'?'Conectar bot':'Desconectar bot',disabled:state.jobs.has(id),action:() => toggleConnection(id)}]
+      : []),
+    {label:'Mover para um grupo...',v1Feature:'groups',action:() => openGroupAssignment(id)}
   ],point);
 }
 function toggleFavorite(id) {
@@ -663,7 +683,7 @@ const commands={
   'advertise':()=>openDialog('Anuncie no Bot Live Messenger','<h2>Sua marca nesta conversa.</h2><p>Este espaço está reservado para publicidade e parcerias.</p><p>Prévia do posicionamento. Nenhum anúncio de terceiros está sendo carregado.</p>',null),
   'settings':openSettings,'add-agent':openAddAgent,'create-group':openCreateGroup,'manage-groups':openManageGroups,
   'appearance':openAppearance,'activity':()=>openActivity(),
-  'agent-activity':()=>options.live?openHandoffs(state.active):openActivity(state.active),'history':openHistory,
+  'agent-activity':()=>openActivity(state.active),'history':openHistory,
   'memory':()=>openMemoryDialog(state.active),'saved-memories':()=>openMemoryDialog(),
   'instructions':()=>openInstructions(state.active),'agent-details':()=>openAgentDetails(state.active),
   'favorite':()=>toggleFavorite(state.active),'connect':()=>toggleConnection(state.active),
@@ -681,7 +701,7 @@ host.addEventListener('click',event=>{
   const menu=event.target.closest('[data-menu]');
   if(menu){
     if(menu.dataset.menu==='view')viewMenu(menu);
-    if(menu.dataset.menu==='contacts')showMenu(menu,[{label:'Adicionar um bot...',icon:'+',action:openAddAgent},{label:'Criar grupo...',action:openCreateGroup},{label:'Gerenciar grupos...',action:openManageGroups},{label:'Memórias salvas...',action:()=>openMemoryDialog()},{separator:true},{label:'Iniciar uma conversa...',action:openContactPicker}]);
+    if(menu.dataset.menu==='contacts')showMenu(menu,[{label:'Adicionar um bot...',icon:'+',action:openAddAgent},{label:'Criar grupo...',v1Feature:'groups',action:openCreateGroup},{label:'Gerenciar grupos...',v1Feature:'groups',action:openManageGroups},{label:'Memórias salvas...',action:()=>openMemoryDialog()},{separator:true},{label:'Iniciar uma conversa...',action:openContactPicker}]);
     if(menu.dataset.menu==='agent')contactMenu(state.active,menu);
     return;
   }
@@ -805,13 +825,7 @@ $('welcome-text').readOnly=true;
 let onboardingShown=false;
 let welcomeFontSize=14;
 function renderWelcomeDocument(){
- const control=host.querySelector('[data-command="watch"]');
- if(control){
-  const textNode=[...control.childNodes].reverse().find(node=>node.nodeType===Node.TEXT_NODE&&node.textContent.trim());
-  if(textNode)textNode.textContent='Acompanhar';else control.append('Acompanhar');
-  control.setAttribute('aria-label','Acompanhar o computador');
- }
- const documentState=welcomeDocumentState({live:Boolean(options.live),runsEnabled:Boolean(options.runsEnabled),watchAvailable:Boolean(options.watchEnabled&&control)});
+ const documentState=welcomeDocumentState({live:Boolean(options.live),runsEnabled:Boolean(options.runsEnabled)});
  $('welcome-text').value=documentState.guide;
  let disclosure=$('welcome-mode-disclosure');
  if(!disclosure){
@@ -1139,7 +1153,9 @@ async function liveSend(event){
   if(abort.signal.aborted)return;
   requestKeys.delete(id);state.drafts[id]=draftAfterSuccessfulSend(state.drafts[id],submittedDraft);
   if(state.active===id){const input=$('message-input');input.value=draftAfterSuccessfulSend(input.value,submittedDraft);state.drafts[id]=input.value;}
+  state.messages[id]=acceptedMessagesAfterSend(state.messages[id]||[],{id:result.messageId,content});
   options.runs=runAfterRequest(options.runs,id,result.run||{id:result.runId,bot_id:id,kind:'chat',state:result.status||'QUEUED',cancel_requested:false,error_code:null,created_at:new Date().toISOString(),finished_at:null});
+  if(state.active===id)renderConversation(true);
   options.refresh?.();
  }catch(e){if(!abort.signal.aborted)notify(e.message || 'Não foi possível enviar.');}
  finally{livePending.delete(id);if(!abort.signal.aborted)renderConversation();}
@@ -1163,7 +1179,7 @@ async function liveSignOut(){
 function syncLive(){
  if(!options.live)return;
  agents.splice(0,agents.length,...(options.bots||[]).map(bot=>({...bot,avatar:portraitUrl(bot.avatar_id),status:presence(bot.computer_state,bot.run_state,bot.enabled)})));
- state.messages=Object.fromEntries(Object.entries(options.messages||{}).map(([id,list])=>[id,list.map(m=>({id:m.id,author:m.role==='assistant'?'agent':m.role,text:m.content,time:new Date(m.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}))]));
+ state.messages=Object.fromEntries(Object.entries(options.messages||{}).map(([id,list])=>[id,list.map(m=>({id:m.id,author:m.role==='assistant'?'agent':m.role,text:m.content,time:new Date(m.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),files:deliveredFilesForMessage(m.artifacts)}))]));
  state.userAvatarId=options.userAvatarId||defaultPicture;renderUserPictures();
  state.instructions=Object.fromEntries(agents.map(b=>[b.id,b.instructions]));
  state.jobs.clear();Object.entries(options.runs||options.activeRuns||{}).filter(([,run])=>isActiveRun(run)).forEach(([id,run])=>state.jobs.set(id,run.id));
@@ -1175,11 +1191,9 @@ function syncLive(){
  else renderWelcomeDocument();
  $('user-display-name').textContent=options.userName||'Você';
  $('main-window').querySelector('.statusbar-right').lastChild.textContent=options.runsEnabled?'Conectado':'Tarefas em preparação';
- host.querySelectorAll('[data-command="agent-activity"]').forEach(button=>{button.lastChild.textContent='Delegações';});
  commands.attach=unavailable;
  commands.about=()=>openDialog('Sobre o Bot Live Messenger','<h2>Bot Live Messenger</h2><p>Seus bots, na sua lista de contatos.</p><p>Suas conversas ficam salvas na sua conta. As tarefas reais são habilitadas após a configuração dos serviços.</p>',null);
  renderContacts();
- void loadGroups().catch(()=>{});
  const focused=state.active;for(const id of windows.keys()){if(agents.some(b=>b.id===id)){state.active=id;renderConversation();}}state.active=focused;
  document.title='Bot Live Messenger';
 }
@@ -1191,7 +1205,7 @@ if(options.authConfigured){
  },'Enviar');
  host.querySelectorAll('[data-auth-info]').forEach(button=>button.onclick=()=>openDialog('Bot Live Messenger',button.dataset.authInfo==='privacy'?'<h2>Sua conta e suas conversas.</h2><p>O acesso usa autenticação segura. Conversas da sua conta ficam salvas para você continuar depois. A demonstração funciona localmente e usa dados fictícios.</p>':'<h2>Entre. Seus bots estão por aqui.</h2><p>Entre com seu e-mail e senha, crie uma conta ou experimente a demonstração local.</p>',null));
 }
-host.addEventListener('error',event=>{const img=event.target;if(img instanceof HTMLImageElement&&img.dataset.catalogPicture&&!img.dataset.fallback){img.dataset.fallback='true';img.src=portraitUrl(defaultPicture);}},{capture:true,signal:abort.signal});
+host.addEventListener('error',event=>{const img=event.target;if(img instanceof HTMLImageElement&&img.dataset.catalogPicture)recoverCatalogPicture(img,portraitUrl(defaultPicture));},{capture:true,signal:abort.signal});
 reducedMotion.addEventListener('change',()=>{host.querySelectorAll('img[data-catalog-picture]').forEach(img=>{img.src=portraitUrl(img.dataset.catalogPicture);});},{signal:abort.signal});
 if(!options.live){try{const saved=localStorage.getItem('bot-messenger.demo-picture');if(displayPictures.includes(saved))state.userAvatarId=saved;}catch{}}
 renderUserPictures();

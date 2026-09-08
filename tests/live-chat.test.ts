@@ -3,7 +3,18 @@ import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { isActiveRun, livePollInterval, parseSequencePage } from '../src/domain/runs';
-import { draftAfterSuccessfulSend, liveEntryState, runAfterRequest } from '../src/components/approved/live-runtime';
+import { attachDeliveredArtifacts, type DeliveredArtifact, type WorkspaceMessage } from '../src/domain/bots';
+import {
+ acceptedMessagesAfterSend,
+ connectionControlState,
+ deliveredFileMarkup,
+ deliveredFilesForMessage,
+ draftAfterSuccessfulSend,
+ liveComposerState,
+ liveEntryState,
+ runAfterRequest,
+ v1VisibleMenuItems,
+} from '../src/components/approved/live-runtime';
 
 const A='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',B='bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 const migrations=['202609060001_initial','202609060002_pilot_quotas','202609060003_team_profiles','20260906193000_chat_worker','20260906210000_live_chat_updates'];
@@ -22,6 +33,75 @@ test('sequence cursors and live polling reject ambiguous input and track active 
 test('successful send clears only the exact submitted draft',()=>{
  assert.equal(draftAfterSuccessfulSend('submitted message','submitted message'),'');
  assert.equal(draftAfterSuccessfulSend('new draft typed during request','submitted message'),'new draft typed during request');
+});
+test('disabled live runtime gives the composer an explicit unavailable state',()=>{
+ assert.deepEqual(liveComposerState({offline:false,pending:false,live:true,runsEnabled:false}),{
+  inputDisabled:true,
+  sendDisabled:true,
+  runtimeUnavailable:true,
+ });
+ assert.equal(liveComposerState({offline:false,pending:false,live:true,runsEnabled:true}).runtimeUnavailable,false);
+});
+test('live mode omits unavailable bot connection controls while demo keeps them',()=>{
+ assert.deepEqual(connectionControlState({live:true,offline:true}),{showToggle:false,showInlineConnect:false});
+ assert.deepEqual(connectionControlState({live:true,offline:false}),{showToggle:false,showInlineConnect:false});
+ assert.deepEqual(connectionControlState({live:false,offline:true}),{showToggle:true,showInlineConnect:true});
+ assert.deepEqual(connectionControlState({live:false,offline:false}),{showToggle:true,showInlineConnect:false});
+});
+test('accepted send appears immediately in the local transcript',()=>{
+ const current=[{id:'assistant-1',author:'agent',text:'Como posso ajudar?'}] as const;
+ assert.deepEqual(acceptedMessagesAfterSend(current,{id:'message-1',content:'  Primeiro pedido  '}),[
+  {id:'assistant-1',author:'agent',text:'Como posso ajudar?'},
+  {id:'message-1',author:'user',text:'Primeiro pedido'},
+ ]);
+ assert.deepEqual(acceptedMessagesAfterSend([
+  {id:'message-1',author:'user',text:'Primeiro pedido'},
+ ],{id:'message-1',content:'Primeiro pedido'}),[
+  {id:'message-1',author:'user',text:'Primeiro pedido'},
+ ]);
+ assert.deepEqual(current,[{id:'assistant-1',author:'agent',text:'Como posso ajudar?'}]);
+});
+test('delivered artifacts map to authenticated download links on refresh',async()=>{
+ const artifactId='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+ assert.deepEqual(deliveredFilesForMessage([{id:artifactId,name:'report.pdf',size_bytes:2048}]),[
+  {name:'report.pdf',size:2048,href:`/api/artifacts/${artifactId}`},
+ ]);
+ assert.deepEqual(deliveredFilesForMessage(undefined),[]);
+ const page=await readFile(new URL('../src/app/messenger/page.tsx',import.meta.url),'utf8');
+ assert.match(page,/from\('artifacts'\).*\.in\('run_id',runIds\).*not\('delivered_at','is',null\)/);
+ assert.doesNotMatch(page,/from\('artifacts'\).*\.limit\(/);
+ assert.doesNotMatch(page,/object_path/);
+ assert.match(page,/if\(artifactResult\.error\)console\.error\('ARTIFACT_METADATA_UNAVAILABLE'\)/);
+});
+test('delivery mapping associates runs across bots and preserves orphan artifacts',()=>{
+ const messages:WorkspaceMessage[]=[
+  {id:'user-a',bot_id:'bot-a',run_id:'run-a',role:'user',content:'A',created_at:'2026-09-07T10:00:00Z'},
+  {id:'assistant-a',bot_id:'bot-a',run_id:'run-a',role:'assistant',content:'Done',created_at:'2026-09-07T10:01:00Z'},
+  {id:'user-b',bot_id:'bot-b',run_id:'run-b',role:'user',content:'B',created_at:'2026-09-07T10:02:00Z'},
+ ];
+ const artifacts:DeliveredArtifact[]=[
+  {id:'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',run_id:'run-a',name:'a.txt',mime_type:'text/plain',size_bytes:1,delivered_at:'2026-09-07T10:01:00Z'},
+  {id:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',run_id:'run-b',name:'b.txt',mime_type:'text/plain',size_bytes:2,delivered_at:'2026-09-07T10:03:00Z'},
+ ];
+ const result=attachDeliveredArtifacts(messages,[{id:'run-a',bot_id:'bot-a'},{id:'run-b',bot_id:'bot-b'}],artifacts);
+ assert.equal(result.find(message=>message.id==='user-a')?.artifacts,undefined);
+ assert.deepEqual(result.find(message=>message.id==='assistant-a')?.artifacts,[artifacts[0]]);
+ assert.deepEqual(result.at(-1),{id:'artifact-run-b',bot_id:'bot-b',run_id:'run-b',role:'assistant',content:'Arquivo entregue.',created_at:'2026-09-07T10:03:00Z',artifacts:[artifacts[1]]});
+});
+test('delivered file markup escapes names and href attributes',()=>{
+ const markup=deliveredFileMarkup({name:'<report & "notes">.txt',size:2,href:'/api/artifacts/id?x="bad"'},'2 < KB');
+ assert.doesNotMatch(markup,/<report|"bad"|2 < KB/);
+ assert.match(markup,/&lt;report &amp; &quot;notes&quot;&gt;\.txt/);
+ assert.match(markup,/href="\/api\/artifacts\/id\?x=&quot;bad&quot;"/);
+});
+test('V1 menus omit excluded features while keeping supported actions',()=>{
+ const visible=v1VisibleMenuItems([
+  {label:'Iniciar uma conversa'},
+  {label:'Criar grupo',v1Feature:'groups' as const},
+  {label:'Ver delegações',v1Feature:'delegation' as const},
+  {label:'Memórias salvas'},
+ ]);
+ assert.deepEqual(visible.map(item=>item.label),['Iniciar uma conversa','Memórias salvas']);
 });
 test('cancel response updates the bot captured before the request',()=>{
  const runs=runAfterRequest({botB:{id:'run-b'}},'botA',{id:'run-a-cancelled'});

@@ -2,7 +2,7 @@
 import { useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { approvedMarkup } from './markup';
-import { mountMessenger,prepareWelcomeMarkup } from './runtime';
+import { mountMessenger,prepareV1Markup,prepareWelcomeMarkup } from './runtime';
 import type { RuntimeOptions } from './types';
 import { livePollInterval } from '@/domain/runs';
 export function ApprovedMessenger(props:RuntimeOptions){
@@ -10,7 +10,7 @@ export function ApprovedMessenger(props:RuntimeOptions){
  const runtime=useRef<ReturnType<typeof mountMessenger>|null>(null);
  const latest=useRef(props);latest.current=props;
  const router=useRouter();
- const renderedMarkup=prepareWelcomeMarkup(approvedMarkup,Boolean(props.live));
+ const renderedMarkup=prepareV1Markup(prepareWelcomeMarkup(approvedMarkup,Boolean(props.live)));
  useEffect(()=>{
   if(!host.current)return;
   // The controller owns this static subtree; React never reconciles its descendants.

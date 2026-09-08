@@ -4,6 +4,7 @@ import { Sandbox } from '@e2b/desktop';
 import {
   connectHermesE2B,
   HermesE2BFactory,
+  hermesResourceShapeFromEnvironment,
   hermesRuntimeNetworkPolicy,
   type HermesE2BApi,
 } from '../src/server/execution/hermes-e2b';
@@ -16,6 +17,7 @@ import {
 } from '../src/server/execution/hermes-provision';
 
 const ownerId = '11111111-1111-4111-8111-111111111111';
+const resourceShape = { cpuCount: 8, memoryMib: 8192 } as const;
 
 test('runtime sandbox denies non-allowlisted egress and public ingress', async () => {
   const originalCreate = Sandbox.create;
@@ -30,7 +32,7 @@ test('runtime sandbox denies non-allowlisted egress and public ingress', async (
         files: { write: async () => undefined },
         commands: { run: async () => ({ exitCode: 0 }) },
         getHost: () => '8642-sandbox-id.e2b.app',
-        getInfo: async () => ({ network: {
+        getInfo: async () => ({ cpuCount: 8, memoryMB: 8192, network: {
           allowOut: ['gateway.example.com', 'docs.example.com'],
           denyOut: ['0.0.0.0/0'], allowPublicTraffic: false,
         } }),
@@ -42,7 +44,7 @@ test('runtime sandbox denies non-allowlisted egress and public ingress', async (
     const factory = new HermesE2BFactory('api-key', 'template', 120_000, {
       version: 'runtime-v1',
       allowedHosts: ['gateway.example.com', 'docs.example.com'],
-    });
+    }, resourceShape);
     const machine = await factory.create(ownerId);
     assert.equal(machine.trafficAccessToken, 'traffic-token');
     assert.deepEqual(received?.network, {
@@ -58,11 +60,11 @@ test('runtime sandbox denies non-allowlisted egress and public ingress', async (
 
 test('runtime sandbox rejects an unversioned or empty network policy before provider access', async () => {
   assert.throws(
-    () => new HermesE2BFactory('api-key', 'template', 120_000, { version: '', allowedHosts: ['gateway.example.com'] }),
+    () => new HermesE2BFactory('api-key', 'template', 120_000, { version: '', allowedHosts: ['gateway.example.com'] }, resourceShape),
     /HERMES_NETWORK_POLICY_UNVERIFIED/,
   );
   assert.throws(
-    () => new HermesE2BFactory('api-key', 'template', 120_000, { version: 'runtime-v1', allowedHosts: [] }),
+    () => new HermesE2BFactory('api-key', 'template', 120_000, { version: 'runtime-v1', allowedHosts: [] }, resourceShape),
     /HERMES_NETWORK_DESTINATIONS_EMPTY/,
   );
   assert.throws(
@@ -75,6 +77,26 @@ test('runtime sandbox rejects an unversioned or empty network policy before prov
   );
 });
 
+test('runtime sandbox rejects an invalid resource shape before provider access', async () => {
+  let providerCalls = 0;
+  const api = { async create() { providerCalls += 1; throw new Error('unexpected'); } } as unknown as HermesE2BApi;
+  assert.throws(
+    () => new HermesE2BFactory('api-key', 'template', 120_000,
+      { version: 'runtime-v1', allowedHosts: ['gateway.example.com'] },
+      { cpuCount: 0, memoryMib: 8192 }, api),
+    /HERMES_RESOURCE_SHAPE_UNVERIFIED/,
+  );
+  assert.equal(providerCalls, 0);
+  assert.throws(
+    () => hermesResourceShapeFromEnvironment({}),
+    /HERMES_RESOURCE_SHAPE_UNVERIFIED/,
+  );
+  assert.deepEqual(hermesResourceShapeFromEnvironment({
+    E2B_VCPU_COUNT: '8',
+    E2B_MEMORY_MIB: '8192',
+  }), resourceShape);
+});
+
 test('resume reasserts egress and rejects a legacy machine with public ingress', async () => {
   const updates: unknown[] = [];
   const sandbox = {
@@ -82,16 +104,77 @@ test('resume reasserts egress and rejects a legacy machine with public ingress',
     files: { write: async () => undefined }, commands: { run: async () => ({ exitCode: 0 }) },
     getHost: () => '8642-sandbox-id.e2b.app', kill: async () => true,
     async updateNetwork(network: unknown) { updates.push(network); },
-    async getInfo() { return { network: {
+    async getInfo() { return { cpuCount: 8, memoryMB: 8192, network: {
       allowOut: ['gateway.example.com'], denyOut: ['0.0.0.0/0'], allowPublicTraffic: true,
     } }; },
   };
   const api = { async connect() { return sandbox; } } as unknown as HermesE2BApi;
   await assert.rejects(
-    connectHermesE2B('api-key', 'sandbox-id', { version: 'runtime-v1', allowedHosts: ['gateway.example.com'] }, api),
+    connectHermesE2B('api-key', 'sandbox-id', { version: 'runtime-v1', allowedHosts: ['gateway.example.com'] }, resourceShape, api),
     /HERMES_NETWORK_POLICY_UNVERIFIED/,
   );
   assert.deepEqual(updates, [{ allowOut: ['gateway.example.com'], denyOut: ['0.0.0.0/0'] }]);
+});
+
+test('created sandbox rejects a provider resource mismatch before returning a machine', async () => {
+  let killed = false;
+  let commands = 0;
+  const sandbox = {
+    sandboxId: 'sandbox-wrong-shape', trafficAccessToken: 'traffic-token',
+    files: { write: async () => undefined },
+    commands: { run: async () => { commands += 1; return { exitCode: 0 }; } },
+    getHost: () => '8642-sandbox-wrong-shape.e2b.app',
+    getInfo: async () => ({ cpuCount: 4, memoryMB: 4096, network: {
+      allowOut: ['gateway.example.com'], denyOut: ['0.0.0.0/0'], allowPublicTraffic: false,
+    } }),
+    kill: async () => { killed = true; return true; },
+  };
+  const api = { async create() { return sandbox; } } as unknown as HermesE2BApi;
+  const factory = new HermesE2BFactory('api-key', 'template', 120_000,
+    { version: 'runtime-v1', allowedHosts: ['gateway.example.com'] }, resourceShape, api);
+
+  await assert.rejects(factory.create(ownerId), (error: unknown) => {
+    assert.ok(error instanceof HermesProvisionError);
+    assert.equal(error.stage, 'network');
+    assert.equal(error.diagnostic, 'HERMES_RESOURCE_SHAPE_MISMATCH');
+    assert.equal(error.machineId, 'sandbox-wrong-shape');
+    assert.equal(error.cleanupConfirmed, true);
+    return true;
+  });
+  assert.equal(commands, 0);
+  assert.equal(killed, true);
+});
+
+test('resumed sandbox preserves its fence identity when the provider resource shape changes', async () => {
+  let killed = false;
+  let commands = 0;
+  const sandbox = {
+    sandboxId: 'sandbox-resume-wrong-shape', trafficAccessToken: 'traffic-token',
+    files: { write: async () => undefined },
+    commands: { run: async () => { commands += 1; return { exitCode: 0 }; } },
+    getHost: () => '8642-sandbox-resume-wrong-shape.e2b.app',
+    updateNetwork: async () => undefined,
+    getInfo: async () => ({ cpuCount: 16, memoryMB: 16384, network: {
+      allowOut: ['gateway.example.com'], denyOut: ['0.0.0.0/0'], allowPublicTraffic: false,
+    } }),
+    kill: async () => { killed = true; return true; },
+  };
+  const api = { async connect() { return sandbox; } } as unknown as HermesE2BApi;
+
+  await assert.rejects(
+    connectHermesE2B('api-key', sandbox.sandboxId,
+      { version: 'runtime-v1', allowedHosts: ['gateway.example.com'] }, resourceShape, api),
+    (error: unknown) => {
+      assert.ok(error instanceof HermesProvisionError);
+      assert.equal(error.stage, 'network');
+      assert.equal(error.diagnostic, 'HERMES_RESOURCE_SHAPE_MISMATCH');
+      assert.equal(error.machineId, sandbox.sandboxId);
+      assert.equal(error.cleanupConfirmed, false);
+      return true;
+    },
+  );
+  assert.equal(commands, 0);
+  assert.equal(killed, false);
 });
 
 test('provisioning exposes only file tools and drops runtime privileges before exec', async () => {
@@ -223,14 +306,14 @@ test('runtime sandbox rejects provider success without a private ingress token',
       sandboxId: 'sandbox-id', trafficAccessToken: undefined,
       files: { write: async () => undefined }, commands: { run: async () => ({ exitCode: 0 }) },
       getHost: () => '8642-sandbox-id.e2b.app',
-      getInfo: async () => ({ network: { allowOut: ['gateway.example.com'], denyOut: ['0.0.0.0/0'], allowPublicTraffic: false } }),
+      getInfo: async () => ({ cpuCount: 8, memoryMB: 8192, network: { allowOut: ['gateway.example.com'], denyOut: ['0.0.0.0/0'], allowPublicTraffic: false } }),
       kill: async () => { killed = true; return true; },
     }),
   });
   try {
     const factory = new HermesE2BFactory('api-key', 'template', 120_000, {
       version: 'runtime-v1', allowedHosts: ['gateway.example.com'],
-    });
+    }, resourceShape);
     await assert.rejects(factory.create(ownerId), (error: unknown) => {
       assert.ok(error instanceof HermesProvisionError);
       assert.equal(error.stage, 'network');
@@ -249,13 +332,13 @@ test('network verification cleanup failure preserves the sandbox id for recovery
     sandboxId: 'sandbox-orphan', trafficAccessToken: undefined,
     files: { write: async () => undefined }, commands: { run: async () => ({ exitCode: 0 }) },
     getHost: () => '8642-sandbox-orphan.e2b.app',
-    getInfo: async () => ({ network: { allowOut: ['gateway.example.com'], denyOut: ['0.0.0.0/0'], allowPublicTraffic: false } }),
+    getInfo: async () => ({ cpuCount: 8, memoryMB: 8192, network: { allowOut: ['gateway.example.com'], denyOut: ['0.0.0.0/0'], allowPublicTraffic: false } }),
     async kill() { throw new Error('provider timeout'); },
   };
   const api = { async create() { return sandbox; } } as unknown as HermesE2BApi;
   const factory = new HermesE2BFactory('api-key', 'template', 120_000, {
     version: 'runtime-v1', allowedHosts: ['gateway.example.com'],
-  }, api);
+  }, resourceShape, api);
   await assert.rejects(factory.create(ownerId), (error: unknown) => {
     assert.ok(error instanceof HermesProvisionError);
     assert.equal(error.stage, 'network');
@@ -319,6 +402,48 @@ test('quiescing does not pause or release while Hermes stays nonterminal', async
     async release() { events.push('release'); },
   }), /HERMES_STOP_UNCONFIRMED/);
   assert.deepEqual(events, ['stop', 'read', 'wait', 'read']);
+});
+
+test('quiescing never pauses or releases an ambiguous remote start', async () => {
+  const { quiesceHermesRuntime } = await import('../src/server/execution/hermes-executor');
+  const events: string[] = [];
+  await assert.rejects(quiesceHermesRuntime({
+    startAttempted: true,
+    alreadyTerminal: false,
+    async pause() { events.push('pause'); },
+    async release() { events.push('release'); },
+  }), /HERMES_STOP_UNCONFIRMED/);
+  assert.deepEqual(events, []);
+});
+
+test('ambiguous remote start is destroyed and settled before its fence is released', async () => {
+  const { destroyAmbiguousHermesRuntime } = await import('../src/server/execution/hermes-executor');
+  const events: string[] = [];
+  await destroyAmbiguousHermesRuntime({
+    async destroy() { events.push('destroy'); },
+    async settleUnknown() { events.push('settle'); },
+    async releaseDestroyed() { events.push('release'); },
+  });
+  assert.deepEqual(events, ['destroy', 'settle', 'release']);
+});
+
+test('ambiguous remote start retains its fence when destroy or settlement fails', async () => {
+  const { destroyAmbiguousHermesRuntime } = await import('../src/server/execution/hermes-executor');
+  const destroyEvents: string[] = [];
+  await assert.rejects(destroyAmbiguousHermesRuntime({
+    async destroy() { destroyEvents.push('destroy'); throw new Error('provider timeout'); },
+    async settleUnknown() { destroyEvents.push('settle'); },
+    async releaseDestroyed() { destroyEvents.push('release'); },
+  }), /provider timeout/);
+  assert.deepEqual(destroyEvents, ['destroy']);
+
+  const settlementEvents: string[] = [];
+  await assert.rejects(destroyAmbiguousHermesRuntime({
+    async destroy() { settlementEvents.push('destroy'); },
+    async settleUnknown() { settlementEvents.push('settle'); throw new Error('database timeout'); },
+    async releaseDestroyed() { settlementEvents.push('release'); },
+  }), /database timeout/);
+  assert.deepEqual(settlementEvents, ['destroy', 'settle']);
 });
 
 test('kill switch is part of the active-run authorization predicate', async () => {

@@ -1,7 +1,11 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { Sandbox } from '@e2b/desktop';
-import { HermesE2BFactory, connectHermesE2B } from '../src/server/execution/hermes-e2b';
+import {
+  HermesE2BFactory,
+  connectHermesE2B,
+  hermesResourceShapeFromEnvironment,
+} from '../src/server/execution/hermes-e2b';
 import { hermesExecutionMayContinue, quiesceHermesRuntime } from '../src/server/execution/hermes-executor';
 import { HermesProvisionError, provisionHermes } from '../src/server/execution/hermes-provision';
 
@@ -78,6 +82,7 @@ async function proveStopBeforePause(sandbox: LiveSandbox, apiKey: string, signal
 async function main() {
   const apiKey = process.env.E2B_API_KEY;
   check(apiKey, 'api_key_present');
+  const resourceShape = hermesResourceShapeFromEnvironment(process.env);
   const image = JSON.parse(await readFile('.local-setup/hermes-image.json', 'utf8')) as { snapshotId?: string };
   check(image.snapshotId, 'snapshot_id_present');
 
@@ -105,7 +110,7 @@ async function main() {
 
   try {
     const binding = await provisionHermes(
-      new HermesE2BFactory(apiKey, image.snapshotId, MAX_SANDBOX_MS, policy, api),
+      new HermesE2BFactory(apiKey, image.snapshotId, MAX_SANDBOX_MS, policy, resourceShape, api),
       randomUUID(),
       { url: 'https://pypi.org/v1', scopedToken: randomBytes(32).toString('hex') },
     );
@@ -156,7 +161,7 @@ async function main() {
     record('unlisted_egress_denied', true);
 
     await proveStopBeforePause(sandbox, apiKey, 'cancel');
-    sandbox = await connectHermesE2B(apiKey, binding.machineId, policy, api) as unknown as LiveSandbox;
+    sandbox = await connectHermesE2B(apiKey, binding.machineId, policy, resourceShape, api) as unknown as LiveSandbox;
     const resumed = sandbox;
     await resumed.commands.run('umask 077 && python3 /opt/blm-hermes-launch.py > /opt/blm-hermes-state/gateway.log 2>&1', {
       user: 'root', background: true, timeoutMs: 0,

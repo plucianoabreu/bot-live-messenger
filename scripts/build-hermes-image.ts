@@ -1,12 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { mkdir, writeFile } from 'node:fs/promises';
 import { Sandbox } from '@e2b/desktop';
-import { HermesE2BFactory } from '../src/server/execution/hermes-e2b';
+import { HermesE2BFactory, hermesResourceShapeFromEnvironment } from '../src/server/execution/hermes-e2b';
 import { installHermesImage, HERMES_REVISION } from '../src/server/execution/hermes-provision';
 
 async function main() {
   const apiKey = process.env.E2B_API_KEY;
   if (!apiKey) throw new Error('E2B_API_KEY_MISSING');
+  const resourceShape = hermesResourceShapeFromEnvironment(process.env);
   const machine = await new HermesE2BFactory(apiKey, 'desktop', 600_000, {
     version: 'hermes-image-build-v1',
     allowedHosts: [
@@ -14,7 +15,7 @@ async function main() {
       'github.com', 'objects.githubusercontent.com', 'release-assets.githubusercontent.com',
       'pypi.org', 'files.pythonhosted.org',
     ],
-  }).create(randomUUID());
+  }, resourceShape).create(randomUUID());
   try {
     await installHermesImage(machine);
     await machine.run('/opt/blm-hermes/.venv/bin/python -c "import aiohttp; import gateway.platforms.api_server"');
