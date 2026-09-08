@@ -45,8 +45,10 @@ export async function handleHermesModel(request: Request, deps: HermesGatewayDep
     // Streaming needs incremental accounting and cancellation; fail closed until supported.
     if (parsed.stream) return Response.json({ error: { message: 'Use stream=false' } }, { status: 400 });
     // Construct an allowlist; callers cannot choose a model, endpoint, token cap or paid hosted tools.
+    // Luna's Chat Completions endpoint rejects function tools when reasoning is enabled.
+    // Hermes depends on function tools, so enforce the supported combination here.
     const body = { model: deps.model, messages: parsed.messages, tools: parsed.tools,
-      stream: false, max_completion_tokens: 1200, reasoning_effort: 'high' };
+      stream: false, max_completion_tokens: 1200, reasoning_effort: parsed.tools?.length ? 'none' : 'high' };
     const cost = Math.ceil((Buffer.byteLength(JSON.stringify(body)) + 4096) * deps.inputRate + 1200 * deps.outputRate);
     stage = 'reservation';
     await deps.reserve(createHash('sha256').update(token).digest('hex'), cost);

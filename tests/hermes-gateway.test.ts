@@ -15,10 +15,26 @@ test('gateway reserves before completion and overrides caller model and output c
     async reserve(hash, cost) { assert.notEqual(hash, token); assert.ok(cost > 1440); events.push('reserve'); },
     async complete(body) {
       assert.equal(body.model, 'configured-model'); assert.equal(body.max_completion_tokens, 1200);
+      assert.equal(body.reasoning_effort, 'high');
       events.push('complete'); return { id: 'response' };
     },
   });
   assert.equal(response.status, 200); assert.deepEqual(events, ['reserve', 'complete']);
+});
+
+test('gateway disables reasoning when Hermes supplies function tools', async () => {
+  const response = await handleHermesModel(request({
+    ...message,
+    tools: [{ type: 'function', function: { name: 'terminal', parameters: { type: 'object' } } }],
+  }), {
+    model: 'configured-model', inputRate: 0.2, outputRate: 1.2,
+    async reserve() {},
+    async complete(body) {
+      assert.equal(body.reasoning_effort, 'none');
+      return { id: 'response' };
+    },
+  });
+  assert.equal(response.status, 200);
 });
 
 test('gateway never calls model after quota failure and sanitizes errors', async () => {
