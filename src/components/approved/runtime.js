@@ -3,7 +3,7 @@ export function authLinkError(search='',hash='') {
  const query=new URLSearchParams(search);
  const fragment=new URLSearchParams(hash.replace(/^#/,''));
  const codes=[query.get('error_code'),fragment.get('error_code')];
- if(codes.includes('otp_expired')) return 'Este link de e-mail expirou ou já foi usado. Se você já confirmou sua conta, clique em Entrar. Caso contrário, solicite um novo link de confirmação.';
+ if(codes.includes('otp_expired')) return 'Este link de e-mail é inválido ou expirou. Se você já confirmou sua conta, tente entrar com seu e-mail e senha.';
  if(codes.includes('bad_code_verifier')||codes.includes('flow_state_not_found')||codes.includes('flow_state_expired')) return 'Não foi possível concluir a confirmação neste navegador. Abra o link mais recente no mesmo navegador em que criou a conta.';
  if(query.get('error')==='signin'||fragment.get('error')==='access_denied') return 'Não foi possível concluir a confirmação pelo link. Tente entrar se sua conta já foi confirmada.';
  return null;
