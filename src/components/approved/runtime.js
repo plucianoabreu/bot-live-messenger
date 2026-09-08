@@ -17,7 +17,7 @@ import { presence } from '../../domain/bots';
 import { displayPictures, defaultPicture, pictureUrl, botProfileInput } from '../../domain/profiles';
 import { isActiveRun } from '../../domain/runs';
 import { recoverCatalogPicture } from './display-picture-picker';
-import { browserLatencyPayload, connectionControlState, deliveredFileMarkup, deliveredFilesForMessage, draftAfterFailedSend, draftAfterSuccessfulSend, failOptimisticMessage, hasRenderedAssistantForRun, liveComposerState, liveEntryState, mergeLiveTranscript, optimisticMessagesAfterSend, reconcileOptimisticMessage, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
+import { browserLatencyPayload, connectionControlState, deliveredFileMarkup, deliveredFilesForMessage, draftAfterFailedSend, draftAfterSuccessfulSend, failOptimisticMessage, hasRenderedAssistantForRun, liveComposerState, liveEntryState, mergeLiveTranscript, optimisticMessagesAfterSend, reconcileOptimisticMessage, runAfterRequest, runFailureFeedbackText, thinkingIndicatorText, v1VisibleMenuItems } from './live-runtime';
 import {
  activeMemoryVersion,collaborationStorageMode,createGenerationGate,groupFromApi,handoffLabel,handoffsForBot,
  reconcileMembershipChanges,sourceMessagesForHandoff,
@@ -102,6 +102,7 @@ const clearTimeout=id=>{window.clearTimeout(id);timers.delete(id);};
 const livePending=new Set();
 const requestKeys=new Map();
 const browserLatency=new Map();
+const announcedRunFailures=new Set();
 const previousScene=document.body.dataset.scene;
 const collaborationMode=()=>collaborationStorageMode(Boolean(options.live));
 
@@ -244,7 +245,7 @@ function renderConversation(scrollToEnd = false) {
    : composer.runtimeUnavailable
     ? '<span>ⓘ As tarefas reais ainda não estão disponíveis nesta conta. Para testar uma conversa agora, saia e escolha a demonstração local.</span>'
     : '';
-  $('typing-status').textContent = pending ? `${agent.name} está trabalhando na sua solicitação...` : '';
+  $('typing-status').textContent = thinkingIndicatorText({live:Boolean(options.live),name:agent.name,pending,run});
   $('message-input').disabled = composer.inputDisabled;
   $('send').disabled = composer.sendDisabled;
   $('stop-task').disabled = !pending || (options.live && (!run || run.cancel_requested));
@@ -257,8 +258,8 @@ function renderConversation(scrollToEnd = false) {
   $('last-message').textContent = lastMessage?.time ? `Última mensagem recebida às ${lastMessage.time} · Bot simulado` : 'Esta é uma conversa com um bot de IA.';
   if(options.live) {
     $('last-message').textContent=options.runsEnabled?'Conversa salva na sua conta.':'As tarefas ainda estão sendo preparadas.';
-    const status={QUEUED:'Sua tarefa está na fila.',RUNNING:'O bot está trabalhando...',WAITING_FOR_USER:'O bot precisa da sua resposta.',SUCCEEDED:'Resposta concluída.',FAILED:'Não foi possível concluir a tarefa. Sua mensagem continua salva; tente novamente.',CANCELLED:'Tarefa interrompida.'};
-    $('typing-status').textContent=run?.cancel_requested&&isActiveRun(run)?'Parando...':status[run?.state]||'';
+    const failure=runFailureFeedbackText(run);
+    if(run?.id&&failure&&!announcedRunFailures.has(run.id)){announcedRunFailures.add(run.id);notify(failure);}
   }
   renderAttachments();
   reportRenderedLatency();

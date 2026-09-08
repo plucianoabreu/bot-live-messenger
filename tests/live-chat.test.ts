@@ -21,6 +21,8 @@ import {
   browserLatencyPayload,
   hasRenderedAssistantForRun,
  runAfterRequest,
+ runFailureFeedbackText,
+ thinkingIndicatorText,
  v1VisibleMenuItems,
 } from '../src/components/approved/live-runtime';
 
@@ -77,6 +79,21 @@ test('live mode omits unavailable bot connection controls while demo keeps them'
  assert.deepEqual(connectionControlState({live:true,offline:false}),{showToggle:false,showInlineConnect:false});
  assert.deepEqual(connectionControlState({live:false,offline:true}),{showToggle:true,showInlineConnect:true});
  assert.deepEqual(connectionControlState({live:false,offline:false}),{showToggle:true,showInlineConnect:false});
+});
+test('the activity line says thinking because RUNNING is aggregate execution state',()=>{
+ const name='AI Sócrates Strategy';
+ assert.equal(thinkingIndicatorText({live:true,name,pending:true,run:{state:'QUEUED'}}),'');
+ assert.equal(thinkingIndicatorText({live:true,name,pending:true,run:{state:'RUNNING',cancel_requested:false}}),`${name} está pensando...`);
+ assert.equal(thinkingIndicatorText({live:true,name,pending:true,run:{state:'RUNNING',cancel_requested:true}}),'');
+ assert.equal(thinkingIndicatorText({live:true,name,pending:true,run:{state:'WAITING_FOR_USER'}}),'');
+ assert.equal(thinkingIndicatorText({live:true,name,pending:false,run:{state:'SUCCEEDED'}}),'');
+ assert.equal(thinkingIndicatorText({live:false,name,pending:true}),`${name} está pensando...`);
+});
+test('only failed runs retain an actionable feedback message',()=>{
+ assert.equal(runFailureFeedbackText({state:'QUEUED'}),'');
+ assert.equal(runFailureFeedbackText({state:'WAITING_FOR_USER'}),'');
+ assert.equal(runFailureFeedbackText({state:'FAILED'}),'Não foi possível concluir a tarefa. Sua mensagem continua salva; tente novamente.');
+ assert.equal(runFailureFeedbackText({state:'CANCELLED'}),'');
 });
 test('accepted send appears immediately in the local transcript',()=>{
  const current=[{id:'assistant-1',author:'agent',text:'Como posso ajudar?'}] as const;

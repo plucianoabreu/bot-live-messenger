@@ -1,3 +1,5 @@
+import type { RunSummary } from '../../domain/runs';
+
 export function draftAfterSuccessfulSend(current:string|undefined,submitted:string) {
  return current===submitted?'':current??'';
 }
@@ -21,6 +23,19 @@ export function liveComposerState({offline,pending,live,runsEnabled}:{offline:bo
 
 export function connectionControlState({live,offline}:{live:boolean;offline:boolean}) {
  return {showToggle:!live,showInlineConnect:offline&&!live};
+}
+
+type ActivityRun = {state?: RunSummary['state'];cancel_requested?: boolean};
+/** RUNNING is aggregate execution state, not a reliable stream-composition signal. */
+export function thinkingIndicatorText({live,name,pending,run}:{live:boolean;name:string;pending:boolean;run?:ActivityRun}) {
+ const thinking=live ? run?.state==='RUNNING'&&!run.cancel_requested : pending;
+ return thinking?`${name} está pensando...`:'';
+}
+
+/** A failed run remains actionable without turning normal lifecycle polling into toast noise. */
+export function runFailureFeedbackText(run?:ActivityRun) {
+ if(run?.state==='FAILED')return 'Não foi possível concluir a tarefa. Sua mensagem continua salva; tente novamente.';
+ return '';
 }
 
 export type TranscriptMessage = {id?:string;author:string;text:string;clientId?:string;delivery?:'sending'|'failed'};
