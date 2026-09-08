@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { executeChat } from '../src/server/execution/chat';
+import { executeChat, type ChatRequest } from '../src/server/execution/chat';
 
 function fixture() {
   let calls = 0;
