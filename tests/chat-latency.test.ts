@@ -59,3 +59,39 @@ test('successful telemetry persistence is silent', async () => {
   assert.equal(saved, true);
   assert.deepEqual(failures, []);
 });
+
+test('telemetry RPC uses the SQL function parameter names', async () => {
+  const calls: Array<{ functionName: string; args: Record<string, unknown> }> = [];
+  const measurement = createChatLatencyTracker().snapshot();
+  const saved = await persistChatLatencyMeasurement(
+    { rpc: async (functionName, args) => {
+      calls.push({ functionName, args });
+      return { data: true, error: null };
+    } },
+    'run-id',
+    7,
+    measurement,
+  );
+  assert.equal(saved, true);
+  assert.deepEqual(calls, [{
+    functionName: 'record_chat_latency_measurement',
+    args: {
+      p_run_id: 'run-id',
+      p_version: 7,
+      p_worker_claimed_ms: 0,
+      p_history_loaded_ms: null,
+      p_memory_loaded_ms: null,
+      p_executor_started_ms: null,
+      p_direct_provider_started_ms: null,
+      p_direct_provider_completed_ms: null,
+      p_hermes_workspace_claimed_ms: null,
+      p_hermes_provision_started_ms: null,
+      p_hermes_resume_started_ms: null,
+      p_hermes_sandbox_ready_ms: null,
+      p_hermes_remote_started_ms: null,
+      p_hermes_remote_completed_ms: null,
+      p_executor_finished_ms: null,
+      p_persistence_completed_ms: null,
+    },
+  }]);
+});

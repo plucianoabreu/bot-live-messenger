@@ -107,7 +107,20 @@ export async function persistChatLatencyMeasurement(
     const { data, error } = await database.rpc('record_chat_latency_measurement', {
       p_run_id: runId,
       p_version: version,
-      ...measurement,
+      p_worker_claimed_ms: measurement.worker_claimed_ms,
+      p_history_loaded_ms: measurement.history_loaded_ms,
+      p_memory_loaded_ms: measurement.memory_loaded_ms,
+      p_executor_started_ms: measurement.executor_started_ms,
+      p_direct_provider_started_ms: measurement.direct_provider_started_ms,
+      p_direct_provider_completed_ms: measurement.direct_provider_completed_ms,
+      p_hermes_workspace_claimed_ms: measurement.hermes_workspace_claimed_ms,
+      p_hermes_provision_started_ms: measurement.hermes_provision_started_ms,
+      p_hermes_resume_started_ms: measurement.hermes_resume_started_ms,
+      p_hermes_sandbox_ready_ms: measurement.hermes_sandbox_ready_ms,
+      p_hermes_remote_started_ms: measurement.hermes_remote_started_ms,
+      p_hermes_remote_completed_ms: measurement.hermes_remote_completed_ms,
+      p_executor_finished_ms: measurement.executor_finished_ms,
+      p_persistence_completed_ms: measurement.persistence_completed_ms,
     });
     if (error) {
       reportFailure('rpc_error');
