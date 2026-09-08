@@ -9,6 +9,11 @@ export type HermesNetworkPolicy = {
   allowedHosts: readonly string[];
 };
 
+export type HermesResourceShape = {
+  cpuCount: number;
+  memoryMib: number;
+};
+
 type E2BSandbox = {
   sandboxId: string;
   trafficAccessToken?: string;
@@ -22,7 +27,11 @@ type E2BSandbox = {
     exitCode: number; stdout?: string; stderr?: string;
   }> };
   getHost(port: number): string;
-  getInfo(): Promise<{ network?: { allowOut?: string[]; denyOut?: string[]; allowPublicTraffic?: boolean } }>;
+  getInfo(): Promise<{
+    cpuCount?: number;
+    memoryMB?: number;
+    network?: { allowOut?: string[]; denyOut?: string[]; allowPublicTraffic?: boolean };
+  }>;
   updateNetwork(network: { allowOut: string[]; denyOut: string[] }): Promise<void>;
   kill(): Promise<unknown>;
 };
@@ -60,6 +69,21 @@ export function validateHermesNetworkPolicy(policy: HermesNetworkPolicy): Hermes
   return { version: policy.version.trim(), allowedHosts };
 }
 
+export function validateHermesResourceShape(shape: HermesResourceShape): HermesResourceShape {
+  if (!Number.isSafeInteger(shape.cpuCount) || shape.cpuCount <= 0 ||
+      !Number.isSafeInteger(shape.memoryMib) || shape.memoryMib <= 0) {
+    throw new Error('HERMES_RESOURCE_SHAPE_UNVERIFIED');
+  }
+  return { cpuCount: shape.cpuCount, memoryMib: shape.memoryMib };
+}
+
+export function hermesResourceShapeFromEnvironment(env: Record<string, string | undefined>): HermesResourceShape {
+  return validateHermesResourceShape({
+    cpuCount: Number(env.E2B_VCPU_COUNT),
+    memoryMib: Number(env.E2B_MEMORY_MIB),
+  });
+}
+
 export function hermesRuntimeNetworkPolicy(gatewayUrl: string, version?: string, allowedHostsCsv?: string) {
   let gateway: URL;
   try { gateway = new URL(gatewayUrl); } catch { throw new Error('MODEL_GATEWAY_INVALID'); }
@@ -77,7 +101,11 @@ function networkRules(policy: HermesNetworkPolicy) {
   return { allowOut: [...policy.allowedHosts], denyOut: ['0.0.0.0/0'] };
 }
 
-async function verifyPrivateNetwork(sandbox: E2BSandbox, policy: HermesNetworkPolicy) {
+async function verifyRuntimeBoundary(
+  sandbox: E2BSandbox,
+  policy: HermesNetworkPolicy,
+  expectedShape: HermesResourceShape,
+) {
   const info = await sandbox.getInfo();
   const actualAllowed = new Set(info.network?.allowOut ?? []);
   const expectedAllowed = new Set(policy.allowedHosts);
@@ -88,6 +116,10 @@ async function verifyPrivateNetwork(sandbox: E2BSandbox, policy: HermesNetworkPo
     throw new Error('HERMES_NETWORK_POLICY_UNVERIFIED');
   }
   if (!sandbox.trafficAccessToken?.trim()) throw new Error('E2B_TRAFFIC_TOKEN_MISSING');
+  if (info.cpuCount !== expectedShape.cpuCount || info.memoryMB !== expectedShape.memoryMib) {
+    throw new Error('HERMES_RESOURCE_SHAPE_MISMATCH');
+  }
+  return { cpuCount: info.cpuCount, memoryMib: info.memoryMB } satisfies HermesResourceShape;
 }
 
 /** Reconnects only to machines whose private ingress is still verifiable. */
@@ -95,29 +127,43 @@ export async function connectHermesE2B(
   apiKey: string,
   sandboxId: string,
   policyInput: HermesNetworkPolicy,
+  resourceShapeInput: HermesResourceShape,
   api: HermesE2BApi = defaultApi,
 ) {
   const policy = validateHermesNetworkPolicy(policyInput);
+  const resourceShape = validateHermesResourceShape(resourceShapeInput);
   const sandbox = await api.connect(sandboxId, { apiKey, timeoutMs: 120_000 });
   // The SDK update endpoint replaces the complete egress policy atomically.
   await sandbox.updateNetwork(networkRules(policy));
-  await verifyPrivateNetwork(sandbox, policy);
+  try {
+    await verifyRuntimeBoundary(sandbox, policy, resourceShape);
+  } catch (error) {
+    if (error instanceof Error && error.message === 'HERMES_RESOURCE_SHAPE_MISMATCH') {
+      // A resumed account workspace may contain durable files. Preserve its
+      // provider identity and fence so the worker can select a recovery action.
+      throw new HermesProvisionError('network', error.message, sandbox.sandboxId, false);
+    }
+    throw error;
+  }
   return sandbox;
 }
 
 /** A separate VM for each account; no provider credentials are put in its environment. */
 export class HermesE2BFactory implements HermesMachineFactory {
   private readonly policy: HermesNetworkPolicy;
+  private readonly resourceShape: HermesResourceShape;
 
   constructor(
     private readonly apiKey: string,
     private readonly template = 'desktop',
     private readonly timeoutMs = 120_000,
     policy: HermesNetworkPolicy,
+    resourceShape: HermesResourceShape,
     private readonly api: HermesE2BApi = defaultApi,
   ) {
     if (!apiKey) throw new Error('E2B_API_KEY_MISSING');
     this.policy = validateHermesNetworkPolicy(policy);
+    this.resourceShape = validateHermesResourceShape(resourceShape);
   }
 
   async create(ownerId: string): Promise<HermesMachine> {
@@ -132,11 +178,13 @@ export class HermesE2BFactory implements HermesMachineFactory {
       },
     });
     try {
-      await verifyPrivateNetwork(sandbox, this.policy);
-    } catch {
+      await verifyRuntimeBoundary(sandbox, this.policy, this.resourceShape);
+    } catch (error) {
       let cleanupConfirmed = false;
       try { await sandbox.kill(); cleanupConfirmed = true; } catch { /* preserve provider id for durable recovery */ }
-      throw new HermesProvisionError('network', undefined, sandbox.sandboxId, cleanupConfirmed);
+      const diagnostic = error instanceof Error && error.message === 'HERMES_RESOURCE_SHAPE_MISMATCH'
+        ? error.message : undefined;
+      throw new HermesProvisionError('network', diagnostic, sandbox.sandboxId, cleanupConfirmed);
     }
     return {
       id: sandbox.sandboxId,
