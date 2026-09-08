@@ -3,7 +3,7 @@
 import { presence } from '../../domain/bots';
 import { displayPictures, defaultPicture, pictureUrl, botProfileInput } from '../../domain/profiles';
 import { isActiveRun } from '../../domain/runs';
-import { acceptedMessagesAfterSend, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
+import { acceptedMessagesAfterSend, deliveredFilesForMessage, draftAfterSuccessfulSend, liveComposerState, liveEntryState, runAfterRequest, v1VisibleMenuItems } from './live-runtime';
 import {
  activeMemoryVersion,collaborationStorageMode,createGenerationGate,groupFromApi,handoffLabel,handoffsForBot,
  reconcileMembershipChanges,sourceMessagesForHandoff,
@@ -25,12 +25,12 @@ export function welcomeDocumentState({live=false,runsEnabled=false}={}) {
    ? '4. As tarefas reais ainda estão em preparação.'
    : '4. Confira a resposta simulada na conversa.';
  const controls=live&&!runsEnabled
-  ? '5. Quando as tarefas forem habilitadas, você poderá usar Parar.\n6. Quando houver um arquivo entregue, baixe pela conversa.'
+  ? '5. Quando as tarefas forem habilitadas, você poderá usar Parar.'
   : live
-   ? '5. Use Parar quando quiser interromper uma tarefa.\n6. Quando houver um arquivo entregue, baixe pela conversa.'
+   ? '5. Use Parar quando quiser interromper uma tarefa.'
    : '5. Use Parar para interromper uma tarefa simulada.\n6. Confira a resposta simulada na conversa.';
  const context=live
-  ? '7. Volte à conversa para continuar com o histórico salvo.'
+  ? '6. Volte à conversa para continuar com o histórico salvo e baixar arquivos entregues.'
   : '7. Volte à conversa para continuar enquanto esta demonstração estiver aberta.';
  const disclosure=!live
   ? 'Demonstração local: conversas e tarefas são simuladas; nenhum trabalho é executado no computador.'
@@ -71,11 +71,12 @@ export function prepareWelcomeMarkup(markup,live=false) {
 export function prepareV1Markup(markup) {
  return markup
   .replace(/<button\b[^>]*data-command="history"[^>]*>[\s\S]*?<\/button>/g,'')
-  .replace('• Bots que colaboram e compartilham contexto.\n','')
-  .replace('• Um computador na nuvem para seus bots.\n','')
-  .replace('• Pesquisa em sites e trabalho com arquivos.\n','')
-  .replace('• Relatórios, planilhas e apresentações.\n','')
-  .replace('3. Acompanhe o trabalho na conversa.','3. Confira a resposta na conversa.');
+  .replace('BOTS DE IA COM UM COMPUTADOR PARA TRABALHAR POR VOCÊ.','BOTS DE IA PARA CONVERSAR COM VOCÊ.')
+  .replace('• Você pede. Sua equipe trabalha na tarefa.','• Você conversa diretamente com cada bot.')
+  .replace('O QUE ESTAMOS CONSTRUINDO\n• Um computador na nuvem para seus bots.\n• Pesquisa em sites e trabalho com arquivos.\n• Relatórios, planilhas e apresentações.\n• Bots que colaboram e compartilham contexto.','O QUE VOCÊ PODE TESTAR\n• Conversas diretas com bots especialistas.\n• Bots personalizados com funções e instruções próprias.')
+  .replace('• Quem quer delegar etapas do trabalho.\n','')
+  .replace('3. Acompanhe o trabalho na conversa.','3. Confira a resposta na conversa.')
+  .replace('• Hoje: interface, personalização e respostas simuladas.\n• Em construção: IA real e execução no computador.','• Conta conectada: a disponibilidade das tarefas aparece depois de entrar.\n• Demonstração local: respostas simuladas, sem execução externa.');
 }
 export function mountMessenger(host, initialOptions = {}) {
 let options=initialOptions;
@@ -196,7 +197,9 @@ function renderConversation(scrollToEnd = false) {
   $('conversation-profile').innerHTML = `<div class="agent-title">${escapeHTML(agent.name)} <small>(${statusLabels[agent.status]})</small></div><div class="agent-description">${escapeHTML(agent.description)}</div>`;
   $('messages').innerHTML = messages.map(message => {
     if (message.author === 'system') return `<div class="message system"><span class="system-time">${message.time || ''}</span>${escapeHTML(message.text)}</div>`;
-    return `<div class="message ${message.author}"><div class="message-author">${message.author === 'user' ? 'Você' : escapeHTML(agent.name)} diz:</div><div class="message-text ${message.bold ? 'bold' : ''}">${escapeHTML(message.text)}</div>${(message.files || []).map(file => `<span class="message-file"><img src="/assets/folder.svg" alt=""><span><strong>${escapeHTML(file.name)}</strong><small>${prettySize(file.size)} · Anexo local</small></span></span>`).join('')}</div>`;
+    return `<div class="message ${message.author}"><div class="message-author">${message.author === 'user' ? 'Você' : escapeHTML(agent.name)} diz:</div><div class="message-text ${message.bold ? 'bold' : ''}">${escapeHTML(message.text)}</div>${(message.files || []).map(file => file.href
+      ? `<a class="message-file" href="${escapeHTML(file.href)}" download><img src="/assets/folder.svg" alt=""><span><strong>${escapeHTML(file.name)}</strong><small>${prettySize(file.size)} · Baixar arquivo entregue</small></span></a>`
+      : `<span class="message-file"><img src="/assets/folder.svg" alt=""><span><strong>${escapeHTML(file.name)}</strong><small>${prettySize(file.size)} · Anexo local</small></span></span>`).join('')}</div>`;
   }).join('');
   if (scrollToEnd || wasAtBottom) messagePane.scrollTop = messagePane.scrollHeight;
   else messagePane.scrollTop = oldScroll;
@@ -1173,7 +1176,7 @@ async function liveSignOut(){
 function syncLive(){
  if(!options.live)return;
  agents.splice(0,agents.length,...(options.bots||[]).map(bot=>({...bot,avatar:portraitUrl(bot.avatar_id),status:presence(bot.computer_state,bot.run_state,bot.enabled)})));
- state.messages=Object.fromEntries(Object.entries(options.messages||{}).map(([id,list])=>[id,list.map(m=>({id:m.id,author:m.role==='assistant'?'agent':m.role,text:m.content,time:new Date(m.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'})}))]));
+ state.messages=Object.fromEntries(Object.entries(options.messages||{}).map(([id,list])=>[id,list.map(m=>({id:m.id,author:m.role==='assistant'?'agent':m.role,text:m.content,time:new Date(m.created_at).toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),files:deliveredFilesForMessage(m.artifacts)}))]));
  state.userAvatarId=options.userAvatarId||defaultPicture;renderUserPictures();
  state.instructions=Object.fromEntries(agents.map(b=>[b.id,b.instructions]));
  state.jobs.clear();Object.entries(options.runs||options.activeRuns||{}).filter(([,run])=>isActiveRun(run)).forEach(([id,run])=>state.jobs.set(id,run.id));

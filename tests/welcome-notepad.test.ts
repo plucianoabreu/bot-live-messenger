@@ -71,7 +71,9 @@ test('welcome guide and persistent disclosure match actual runtime availability'
 test('V1 markup removes conversation export and excluded promises but keeps file downloads',()=>{
  const prepared=prepareV1Markup(approvedMarkup);
  assert.doesNotMatch(prepared,/data-command="history"/);
- assert.doesNotMatch(prepared,/Bots que colaboram|Acompanhe o trabalho/i);
+ assert.doesNotMatch(prepared,/Bots que colaboram|Acompanhe o trabalho|computador para trabalhar|sua equipe trabalha|delegar etapas|Em construção: IA real|execução no computador/i);
+ assert.match(prepared,/BOTS DE IA PARA CONVERSAR COM VOCÊ/);
+ assert.match(prepared,/Conta conectada: a disponibilidade das tarefas aparece depois de entrar/);
  assert.match(prepared,/data-command="attach"/);
  assert.match(prepared,/id="dialog-download"/);
  assert.match(prepared,/id="welcome-download"/);

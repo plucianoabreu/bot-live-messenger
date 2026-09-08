@@ -4,7 +4,7 @@ Snapshot reviewed: `cf3a6bddc1735de4cab68c0386ab9b2dfc1647a2`.
 
 ## V1 surface
 
-V1 presents direct bot conversations and bot customization. It does not present conversation export, computer Watch, groups, or bot-to-bot delegation. File download controls remain available when a generated file has been delivered. The UI and this guide make no claim that Hermes computer execution is pilot-ready.
+V1 presents direct bot conversations and bot customization. It does not present conversation export, computer Watch, groups, or bot-to-bot delegation. Delivered files appear on the assistant message and download through the authenticated artifact route. The UI and this guide make no claim that Hermes computer execution is pilot-ready.
 
 ## Implemented in this clone
 

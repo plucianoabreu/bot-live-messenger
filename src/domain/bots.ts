@@ -14,4 +14,5 @@ export function presence(computer: ComputerState, run?: RunState, enabled = true
 }
 export const presenceLabels = {available: 'Disponível', busy: 'Ocupado', away: 'Ausente', offline: 'Offline'};
 export type Bot = {id: string; name: string; preset: string|null; description: string; role: string; instructions: string; instructions_version:number; avatar_id:string; computer_state: ComputerState; enabled: boolean; run_state?: RunState};
-export type Message = {id: string; sequence?: string; role: 'user' | 'assistant' | 'system'; content: string; created_at: string};
+export type DeliveredArtifact = {id:string;name:string;mime_type:string;size_bytes:number};
+export type Message = {id: string; sequence?: string; run_id?:string|null; role: 'user' | 'assistant' | 'system'; content: string; created_at: string; artifacts?:DeliveredArtifact[]};

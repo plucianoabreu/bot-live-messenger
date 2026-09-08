@@ -5,6 +5,7 @@ import assert from 'node:assert/strict';
 import { isActiveRun, livePollInterval, parseSequencePage } from '../src/domain/runs';
 import {
  acceptedMessagesAfterSend,
+ deliveredFilesForMessage,
  draftAfterSuccessfulSend,
  liveComposerState,
  liveEntryState,
@@ -50,6 +51,16 @@ test('accepted send appears immediately in the local transcript',()=>{
   {id:'message-1',author:'user',text:'Primeiro pedido'},
  ]);
  assert.deepEqual(current,[{id:'assistant-1',author:'agent',text:'Como posso ajudar?'}]);
+});
+test('delivered artifacts map to authenticated download links on refresh',async()=>{
+ assert.deepEqual(deliveredFilesForMessage([{id:'artifact/id',name:'report.pdf',size_bytes:2048}]),[
+  {name:'report.pdf',size:2048,href:'/api/artifacts/artifact%2Fid'},
+ ]);
+ assert.deepEqual(deliveredFilesForMessage(undefined),[]);
+ const page=await readFile(new URL('../src/app/messenger/page.tsx',import.meta.url),'utf8');
+ assert.match(page,/from\('artifacts'\).*not\('delivered_at','is',null\)/);
+ assert.match(page,/m\.role==='assistant'&&m\.run_id\?artifactsByRun\.get\(m\.run_id\)/);
+ assert.doesNotMatch(page,/object_path/);
 });
 test('V1 menus omit excluded features while keeping supported actions',()=>{
  const visible=v1VisibleMenuItems([

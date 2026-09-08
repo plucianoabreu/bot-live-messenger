@@ -21,6 +21,15 @@ export function acceptedMessagesAfterSend<T extends TranscriptMessage>(messages:
  return [...messages,{id:accepted.id,author:'user' as const,text:accepted.content.trim()}];
 }
 
+type DeliveredArtifact = {id:string;name:string;size_bytes:number};
+export function deliveredFilesForMessage(artifacts:readonly DeliveredArtifact[]|undefined) {
+ return (artifacts??[]).map(artifact=>({
+  name:artifact.name,
+  size:artifact.size_bytes,
+  href:`/api/artifacts/${encodeURIComponent(artifact.id)}`,
+ }));
+}
+
 type V1ExcludedFeature = 'conversation-export' | 'watch' | 'groups' | 'delegation';
 export function v1VisibleMenuItems<T extends {v1Feature?:V1ExcludedFeature}>(items:readonly T[]) {
  return items.filter(item=>!item.v1Feature);
