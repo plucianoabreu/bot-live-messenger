@@ -1,5 +1,6 @@
 /** Trusted worker boundary. Never import this module into a client component. */
 import { MAX_CHAT_MEMORY_BYTES } from './memory-context';
+import { buildBotIdentityInstruction, parseBotIdentitySnapshot, renderUntrustedContent, type BotIdentitySnapshot } from './identity-instructions';
 
 export type ChatMessage = { role: 'user' | 'assistant'; content: string };
 type ReasoningEffort = 'none' | 'high';
@@ -36,7 +37,7 @@ export function chatResponseProfile(history: readonly ChatMessage[]): { reasonin
 
 export async function executeChat(options: {
   model: string;
-  instructions: string;
+  identity: BotIdentitySnapshot;
   memoryContext?: string;
   history: ChatMessage[];
   signal: AbortSignal;
@@ -46,24 +47,27 @@ export async function executeChat(options: {
 }) {
   options.signal.throwIfAborted();
   if (!options.model.trim()) throw new Error('MODEL_NOT_CONFIGURED');
-  if (!options.instructions.trim() || options.instructions.length > 16000) throw new Error('INVALID_INSTRUCTIONS');
   if (!options.history.length || options.history.at(-1)?.role !== 'user') throw new Error('INVALID_HISTORY');
   for (const message of options.history) {
     if (!['user', 'assistant'].includes(message.role) || !message.content.trim()) throw new Error('INVALID_HISTORY');
   }
   const memoryContext = options.memoryContext?.trim() ?? '';
   if (Buffer.byteLength(memoryContext, 'utf8') > MAX_CHAT_MEMORY_BYTES) throw new Error('MEMORY_CONTEXT_INVALID');
-  const instructions = policy + '\n\nSpecialty:\n' + options.instructions +
-    (memoryContext ? `\n\n${memoryContext}` : '');
+  const identity = parseBotIdentitySnapshot(options.identity);
+  const instructions = policy + '\n\n' + buildBotIdentityInstruction(identity) +
+    (memoryContext ? `\n\n${renderUntrustedContent('MEMORY', memoryContext)}` : '');
+  const input = options.history.map(message => ({ ...message,
+    content: renderUntrustedContent(message.role === 'user' ? 'USER MESSAGE' : 'CONVERSATION MESSAGE', message.content),
+  }));
   // Reject oversized context instead of silently dropping the user's request.
-  const inputByteBound = Buffer.byteLength(JSON.stringify({ instructions, input: options.history }), 'utf8');
+  const inputByteBound = Buffer.byteLength(JSON.stringify({ instructions, input }), 'utf8');
   if (inputByteBound > 48000) throw new Error('CONTEXT_LIMIT');
   const profile = chatResponseProfile(options.history);
   const outputTokenLimit = profile.maxOutputTokens;
   await options.authorize(inputByteBound, outputTokenLimit);
   options.signal.throwIfAborted();
   const response = await options.provider({ model: options.model, instructions,
-    input: options.history, max_output_tokens: outputTokenLimit, store: false, reasoning: { effort: profile.reasoning } }, options.signal);
+    input, max_output_tokens: outputTokenLimit, store: false, reasoning: { effort: profile.reasoning } }, options.signal);
   options.signal.throwIfAborted();
   if (!response.usage || !Number.isSafeInteger(response.usage.input_tokens) ||
       !Number.isSafeInteger(response.usage.output_tokens) || response.usage.input_tokens < 0 ||

@@ -5,6 +5,7 @@ import { executeChat, type ChatMessage } from '../server/execution/chat';
 import { createOpenAIProvider } from '../server/execution/openai';
 import { loadChatMemoryContextWhenEnabled } from '../server/execution/memory-context';
 import { chatRuntimeEnabled, executeHermes, hermesExecutionMayContinue } from '../server/execution/hermes-executor';
+import { buildBotIdentityInstruction, parseBotIdentitySnapshot, renderUntrustedContent } from '../server/execution/identity-instructions';
 
 export const chatTask=task({
  id:'bot-messenger-chat',maxDuration:120,retry:{maxAttempts:1},
@@ -43,10 +44,14 @@ export const chatTask=task({
    // Default off: hosted chat may be deployed before the collaboration migration.
    // Once enabled, memory query or scope failures remain fail-closed.
    const memoryContext=await loadChatMemoryContextWhenEnabled(db,r.user_id,r.bot_id,process.env.MEMORY_ENABLED==='true',controller.signal);
+   const identity=parseBotIdentitySnapshot(r.identity);
+   const trustedInstructions=buildBotIdentityInstruction(identity);
+   const untrustedMemory=memoryContext?renderUntrustedContent('MEMORY',memoryContext):'';
+   const untrustedMessage=renderUntrustedContent('USER MESSAGE',current.content);
    const result=hermesEnabled
     ? await executeHermes({runId,version:r.version,ownerId:r.user_id,botId:r.bot_id,
-      instructions:[r.instructions,memoryContext].filter(Boolean).join('\n\n'),message:current.content,model,signal:controller.signal})
-    : await executeChat({model,instructions:r.instructions,memoryContext,history,signal:controller.signal,provider:createOpenAIProvider(),
+      instructions:[trustedInstructions,untrustedMemory].filter(Boolean).join('\n\n'),message:untrustedMessage,model,signal:controller.signal})
+    : await executeChat({model,identity,memoryContext,history,signal:controller.signal,provider:createOpenAIProvider(),
     authorize:async(bytes,output)=>{
      // Conservative byte-based bound plus framing allowance; prices must be verified for this model.
      const cost=Math.ceil((bytes+4096)*inputRate+output*outputRate);
