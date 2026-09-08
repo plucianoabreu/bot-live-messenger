@@ -1,14 +1,25 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {presence,presets} from '../src/domain/bots';
+import {busyPresenceDelayMs,isLongRunningExecution,presence,presets} from '../src/domain/bots';
 import {canTransition,limits,messageInput,withinBudget} from '../src/domain/runs';
 test('presence follows work before idle computer state',()=>{
- assert.equal(presence('PAUSED','QUEUED'),'busy');
+ assert.equal(presence('PAUSED','QUEUED'),'away');
  assert.equal(presence('READY','WAITING_FOR_USER'),'away');
  assert.equal(presence('NOT_CREATED'),'available');
  assert.equal(presence('FAILED'),'offline');
  assert.equal(presence('FAILED','RUNNING'),'offline');
  assert.equal(presence('READY','RUNNING',false),'offline');
+});
+test('Busy starts only after 120 seconds of persisted active execution',()=>{
+ const start='2026-09-08T12:00:00.000Z';
+ assert.equal(isLongRunningExecution({state:'RUNNING',heartbeat_at:start},Date.parse(start)+busyPresenceDelayMs-1),false);
+ assert.equal(isLongRunningExecution({state:'RUNNING',heartbeat_at:start},Date.parse(start)+busyPresenceDelayMs),true);
+ assert.equal(isLongRunningExecution({state:'RUNNING',heartbeat_at:'not-a-date'},Date.parse(start)+busyPresenceDelayMs),false);
+ assert.equal(isLongRunningExecution({state:'RUNNING',heartbeat_at:'2026-09-08T12:03:00.000Z'},Date.parse(start)+busyPresenceDelayMs),false);
+ assert.equal(presence('READY',{state:'RUNNING',heartbeat_at:start},true,Date.parse(start)+busyPresenceDelayMs-1),'available');
+ assert.equal(presence('READY',{state:'RUNNING',heartbeat_at:start},true,Date.parse(start)+busyPresenceDelayMs),'busy');
+ assert.equal(presence('READY',{state:'WAITING_FOR_USER',heartbeat_at:start},true,Date.parse(start)+busyPresenceDelayMs),'away');
+ assert.equal(presence('READY',{state:'SUCCEEDED',heartbeat_at:start},true,Date.parse(start)+busyPresenceDelayMs),'available');
 });
 test('terminal runs cannot restart or claim success after cancellation',()=>{
  assert.equal(canTransition('CANCELLED','SUCCEEDED'),false);

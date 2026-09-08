@@ -49,7 +49,7 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
  try { await tasks.trigger<typeof chatTask>('bot-messenger-chat',{runId:data},{idempotencyKey:data});await recordAdmission('dispatch_completed'); }
  catch { console.error('CHAT_DISPATCH_PENDING'); }
  const [runResult,messageResult]=await Promise.all([
-  auth.db.from('runs').select('id,bot_id,kind,state,cancel_requested,error_code,created_at,finished_at').eq('id',data).single(),
+  auth.db.from('runs').select('id,bot_id,kind,state,cancel_requested,error_code,created_at,heartbeat_at,finished_at').eq('id',data).single(),
   auth.db.from('messages').select('id').eq('run_id',data).eq('role','user').single(),
  ]);
  if(runResult.error||messageResult.error)return Response.json({error:'A tarefa foi salva, mas o estado ainda não pôde ser carregado. Tente atualizar.'},{status:500,headers:noStore});

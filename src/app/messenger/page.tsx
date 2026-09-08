@@ -13,7 +13,7 @@ export default async function MessengerPage(){
  const [botResult,messageResult,runResult,profileResult,computerResult]=await Promise.all([
   db.from('bots').select('id,name,preset,description,role,instructions,instructions_version,avatar_id,enabled').order('created_at').order('id'),
   db.from('messages').select('id,sequence,run_id,bot_id,role,content,created_at').order('sequence',{ascending:false}).limit(300),
-  db.from('runs').select('id,bot_id,kind,state,cancel_requested,error_code,created_at,finished_at').order('created_at',{ascending:false}).order('id',{ascending:false}).limit(300),
+  db.from('runs').select('id,bot_id,kind,state,cancel_requested,error_code,created_at,heartbeat_at,finished_at').order('created_at',{ascending:false}).order('id',{ascending:false}).limit(300),
   db.from('profiles').select('avatar_id').eq('user_id',user.id).single(),
   db.from('workspace_computers').select('state').eq('user_id',user.id).single(),
  ]);

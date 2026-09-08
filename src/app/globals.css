@@ -721,6 +721,16 @@ button:active:not(:disabled) {
   color:#285b90}
 .message-text.bold {
   font-weight:600}
+.message-delivery {
+  color:#7e929e;
+  font-size:10px;
+  margin-top:3px}
+.message-delivery.failed {color:#9a5b42}
+.message-delivery button {
+  color:#426b8a;
+  font-size:10px;
+  text-decoration:underline;
+  padding:0}
 .message.system {
   font-size:11px;
   color:#8496a3;

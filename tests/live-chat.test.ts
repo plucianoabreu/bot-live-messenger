@@ -9,9 +9,15 @@ import {
  connectionControlState,
  deliveredFileMarkup,
  deliveredFilesForMessage,
+ draftAfterFailedSend,
  draftAfterSuccessfulSend,
+ failOptimisticMessage,
  liveComposerState,
   liveEntryState,
+ mergeLiveTranscript,
+ optimisticMessageId,
+ optimisticMessagesAfterSend,
+ reconcileOptimisticMessage,
   browserLatencyPayload,
   hasRenderedAssistantForRun,
  runAfterRequest,
@@ -54,6 +60,10 @@ test('successful send clears only the exact submitted draft',()=>{
  assert.equal(draftAfterSuccessfulSend('submitted message','submitted message'),'');
  assert.equal(draftAfterSuccessfulSend('new draft typed during request','submitted message'),'new draft typed during request');
 });
+test('failed send restores its text without overwriting a newer draft',()=>{
+ assert.equal(draftAfterFailedSend('', 'submitted message'),'submitted message');
+ assert.equal(draftAfterFailedSend('new draft typed during request','submitted message'),'new draft typed during request');
+});
 test('disabled live runtime gives the composer an explicit unavailable state',()=>{
  assert.deepEqual(liveComposerState({offline:false,pending:false,live:true,runsEnabled:false}),{
   inputDisabled:true,
@@ -80,6 +90,25 @@ test('accepted send appears immediately in the local transcript',()=>{
   {id:'message-1',author:'user',text:'Primeiro pedido'},
  ]);
  assert.deepEqual(current,[{id:'assistant-1',author:'agent',text:'Como posso ajudar?'}]);
+});
+test('optimistic send reconciles exactly once and a retry retains its idempotency identity',()=>{
+ const key='11111111-1111-4111-8111-111111111111';
+ const pending=optimisticMessagesAfterSend([{id:'old',author:'agent',text:'Oi'}],{idempotencyKey:key,content:'  Primeiro pedido  '});
+ assert.equal(pending.at(-1)?.id,optimisticMessageId(key));
+ assert.equal(pending.at(-1)?.delivery,'sending');
+ const retry=optimisticMessagesAfterSend(failOptimisticMessage(pending,key),{idempotencyKey:key,content:'Primeiro pedido'});
+ assert.equal(retry.filter(message=>message.clientId===optimisticMessageId(key)).length,1);
+ assert.equal(retry.at(-1)?.delivery,'sending');
+ const reconciled=reconcileOptimisticMessage(retry,{id:'message-1',idempotencyKey:key,content:'Primeiro pedido'});
+ assert.equal(reconciled.filter(message=>message.id==='message-1').length,1);
+ assert.equal(reconciled.some(message=>message.id===optimisticMessageId(key)),false);
+ assert.deepEqual(reconcileOptimisticMessage(reconciled,{id:'message-1',idempotencyKey:key,content:'Primeiro pedido'}),reconciled);
+});
+test('authoritative refresh retains only unresolved local messages',()=>{
+ const pending={id:'optimistic:key',clientId:'optimistic:key',author:'user' as const,text:'Still sending',delivery:'sending' as const};
+ const delivered={id:'message-1',author:'user' as const,text:'Saved'};
+ assert.deepEqual(mergeLiveTranscript([delivered],[delivered,pending]),[delivered,pending]);
+ assert.deepEqual(mergeLiveTranscript([delivered],[{...pending,id:'message-1'}]),[delivered]);
 });
 test('delivered artifacts map to authenticated download links on refresh',async()=>{
  const artifactId='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
