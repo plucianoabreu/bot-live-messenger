@@ -1,5 +1,6 @@
 -- Per-run performance marks for diagnosis. These fields intentionally never store
--- user messages, assistant output, prompts, credentials, model requests, or IDs.
+-- user messages, assistant output, prompts, credentials, model requests, provider IDs,
+-- or user identifiers. The run relationship is the minimum required for measurement.
 create table public.chat_latency_measurements (
   run_id uuid not null references public.runs(id) on delete cascade,
   execution_version integer not null check(execution_version > 0),
