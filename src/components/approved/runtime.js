@@ -1,4 +1,13 @@
 export function initialAuthMode({recovery=false}={}) { return recovery?'login':'signup'; }
+export function authLinkError(search='',hash='') {
+ const query=new URLSearchParams(search);
+ const fragment=new URLSearchParams(hash.replace(/^#/,''));
+ const codes=[query.get('error_code'),fragment.get('error_code')];
+ if(codes.includes('otp_expired')) return 'Este link de e-mail expirou ou já foi usado. Se você já confirmou sua conta, clique em Entrar. Caso contrário, solicite um novo link de confirmação.';
+ if(codes.includes('bad_code_verifier')||codes.includes('flow_state_not_found')||codes.includes('flow_state_expired')) return 'Não foi possível concluir a confirmação neste navegador. Abra o link mais recente no mesmo navegador em que criou a conta.';
+ if(query.get('error')==='signin'||fragment.get('error')==='access_denied') return 'Não foi possível concluir a confirmação pelo link. Tente entrar se sua conta já foi confirmada.';
+ return null;
+}
 // DOM controller ported from the approved prototype, isolated to one React-owned host.
 // Mock behavior is restricted to the explicit demonstration; live mode uses authorized APIs.
 import { presence } from '../../domain/bots';
@@ -1224,7 +1233,8 @@ renderUserPictures();
 const loginPicture=$('login-avatar').querySelector('img');loginPicture.src=portraitUrl(defaultPicture);loginPicture.dataset.catalogPicture=defaultPicture;
 if(options.preview){$('login-screen').hidden=true;$('main-window').hidden=false;showOnboarding();document.title='Bot Live Messenger';}
 syncLive();
-if(options.initialError){$('auth-error').hidden=false;$('auth-error').textContent=options.initialError;}
+const linkError=authLinkError(window.location.search,window.location.hash);
+if(linkError||options.initialError){$('auth-error').hidden=false;$('auth-error').textContent=linkError||options.initialError;}
 if(options.recovery){
  $('auth-heading').textContent='Nova senha';$('auth-subheading').textContent='Escolha uma nova senha para sua conta.';
  $('auth-email').closest('label').hidden=true;$('auth-email').required=false;
