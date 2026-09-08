@@ -4,7 +4,7 @@ import { AccountDeletionError, type requestAccountDeletion } from '@/server/acco
 const headers = { 'Cache-Control': 'private, no-store' };
 
 export type AccountDeletionRouteDependencies = {
-  readiness(): { ready: boolean };
+  readiness(): { ready: boolean; reasons?: readonly string[] };
   authenticate(): Promise<{ response: Response } | { response?: undefined; db: Parameters<typeof requestAccountDeletion>[0]['db'] & { rpc(name: string): PromiseLike<{ data: unknown; error: unknown }> }; user: { id: string; email?: string | null } }>;
   readJson(request: Request, maxBytes: number): Promise<unknown>;
   originAllowed(request: Request): boolean;
@@ -23,7 +23,11 @@ export function createAccountDeletionHandlers(dependencies: AccountDeletionRoute
 
   async function post(request: Request) {
     if (!dependencies.originAllowed(request)) return Response.json({ error: 'Origem inválida.' }, { status: 403, headers });
-    if (!dependencies.readiness().ready) return Response.json({ error: 'A exclusão de conta ainda não está disponível.' }, { status: 503, headers });
+    const readiness = dependencies.readiness();
+    if (!readiness.ready) {
+      console.error('ACCOUNT_CLEANUP_UNAVAILABLE', readiness.reasons?.join(',') || 'UNKNOWN');
+      return Response.json({ error: 'A exclusão de conta ainda não está disponível.' }, { status: 503, headers });
+    }
     const auth = await dependencies.authenticate();
     if (auth.response) return auth.response;
     let body: unknown;
@@ -45,6 +49,7 @@ export function createAccountDeletionHandlers(dependencies: AccountDeletionRoute
         return Response.json({ error: 'Não foi possível confirmar a conta.' }, { status: 403, headers });
       }
       if (error instanceof AccountDeletionError && error.code === 'CLEANUP_UNAVAILABLE') {
+        console.error('ACCOUNT_CLEANUP_UNAVAILABLE', 'RUNTIME_VERIFICATION_FAILED');
         return Response.json({ error: 'A exclusão de conta ainda não está disponível.' }, { status: 503, headers });
       }
       return Response.json({ error: 'Não foi possível registrar a exclusão com segurança.' }, { status: 500, headers });

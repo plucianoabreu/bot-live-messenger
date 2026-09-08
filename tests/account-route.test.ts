@@ -34,8 +34,16 @@ test('account deletion route rejects cross-origin, disabled and invalid requests
   assert.equal((await crossOrigin.handlers.POST(request('{}', 'https://evil.example'))).status, 403);
   assert.deepEqual(crossOrigin.calls, []);
 
-  const disabled = dependencies({ readiness: (() => ({ ready: false, reasons: ['DISABLED'] })) as AccountDeletionRouteDependencies['readiness'] });
-  assert.equal((await disabled.handlers.POST(request('{}'))).status, 503);
+  const originalError = console.error;
+  const errors: unknown[][] = [];
+  console.error = (...args: unknown[]) => { errors.push(args); };
+  try {
+    const disabled = dependencies({ readiness: (() => ({ ready: false, reasons: ['ACCOUNT_CLEANUP_DISABLED'] })) as AccountDeletionRouteDependencies['readiness'] });
+    assert.equal((await disabled.handlers.POST(request('{}'))).status, 503);
+    assert.deepEqual(errors, [['ACCOUNT_CLEANUP_UNAVAILABLE', 'ACCOUNT_CLEANUP_DISABLED']]);
+  } finally {
+    console.error = originalError;
+  }
 
   const invalid = dependencies();
   assert.equal((await invalid.handlers.POST(request(JSON.stringify({ password: 'secret1', confirmation: 'delete' })))).status, 400);
