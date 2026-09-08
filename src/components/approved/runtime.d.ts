@@ -11,3 +11,5 @@ export function createDesktopShortcutSelection(ids:readonly string[]):{select(id
 export function prepareV1Markup(markup:string):string;
 export function prepareWelcomeMarkup(markup:string,live?:boolean):string;
 export function mountMessenger(host: HTMLElement, options: RuntimeOptions): {update(options:RuntimeOptions):void;destroy():void};
+
+export function initialAuthMode(options?:Pick<RuntimeOptions,'recovery'>):'login'|'signup';

@@ -1,3 +1,4 @@
+export function initialAuthMode({recovery=false}={}) { return recovery?'login':'signup'; }
 // DOM controller ported from the approved prototype, isolated to one React-owned host.
 // Mock behavior is restricted to the explicit demonstration; live mode uses authorized APIs.
 import { presence } from '../../domain/bots';
@@ -41,7 +42,7 @@ export function welcomeDocumentState({live=false,runsEnabled=false}={}) {
  const availability=live&&!runsEnabled
   ? '\n\nMODO ATUAL\nAs tarefas reais ainda não estão disponíveis nesta conta. Para testar uma conversa agora, saia e escolha a demonstração local.'
   : live
-   ? '\n\nLIMITES DO PILOTO\nSua conta pode iniciar até 5 tarefas de chat durante este piloto. O saldo restante ainda não aparece nesta tela.'
+   ? '\n\nLIMITES DO PILOTO\nSua conta pode iniciar até 8 tarefas de chat durante este piloto. O saldo restante ainda não aparece nesta tela.'
    : '';
  return {mode:live?'live':'demo',disclosure,guide:`COMO USAR O BOT MESSENGER
 ${availability}
@@ -116,6 +117,15 @@ const windows=new Map();let windowOrder=20;
 const rootWindow=host.querySelector('#conversation-window');
 const registeredListeners=[];
 function listen(element,type,handler,options){element.addEventListener(type,handler,options);registeredListeners.push({element,type,handler,options});}
+const conversationTitleIcon=host.querySelector('#conversation-drag > img');
+if(conversationTitleIcon){
+ conversationTitleIcon.src='/assets/titlebar-chats.svg';
+ listen(conversationTitleIcon,'error',event=>{
+  const icon=event.currentTarget;
+  if(!icon.src.endsWith('/assets/messenger.svg'))icon.src='/assets/messenger.svg';
+  else icon.hidden=true;
+ });
+}
 const $ = id => {
  const active=windows.get(state.active);
  if(active){if(id==='conversation-window')return active;const local=active.querySelector(`[data-part="${id}"],#${id}`);if(local)return local;}
@@ -922,7 +932,9 @@ function ensureWindow(id){
  win.dataset.botId=id;windows.set(id,win);win.hidden=false;
  const offset=(windows.size-1)%5*24;
  const contactBounds=$('main-window').getBoundingClientRect();
- moveWindow(win,contactBounds.right+32+offset,115+offset);
+ // Wider conversation windows should still open fully inside the desktop instead
+ // of relying on a fixed left edge that can put their controls off-screen.
+ moveWindow(win,contactBounds.right+24+offset,Math.min(115+offset,Math.max(0,innerHeight-win.offsetHeight-16)));
  bringToFront(win);
 }
 function focusWindow(win){
@@ -948,7 +960,7 @@ renderContacts();
   const initialWorkspace = structuredClone(state);
   const demo = {email:'bot@messenger.test',name:'Você',password:'messenger'};
   const rememberedEmailKey = 'agent-messenger.remembered-email';
-  let mode = 'login';
+  let mode = initialAuthMode(options);
   let attempt = 0;
   let connecting = false;
   let demoAttempt = false;

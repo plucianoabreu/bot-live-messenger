@@ -75,9 +75,9 @@ The signed-in desktop now includes an original aurora wallpaper, movable contact
 
 ## USD 50 pilot policy
 
-Each account receives five chat messages and one computer task, shared across bots, with no automatic renewal. Chat admission reserves USD 0.02 from a USD 10 pool; computer admission reserves USD 0.25 from a USD 25 pool. USD 15 is held outside execution for infrastructure, tests and discrepancies. All runs are limited to 120 seconds by the execution contract.
+Each account receives eight chat messages and one computer task, shared across bots, with no automatic renewal. Chat admission reserves USD 0.02 from a USD 30 pool; computer admission and each Hermes chat reserve USD 0.25 from a USD 10 computer pool. USD 10 is held outside execution as an operator reserve for infrastructure, tests and discrepancies. All runs are limited to 120 seconds by the execution contract.
 
-The second migration serializes global allocation and account admission in one transaction. Matching retries return the original run without allocating again. Cancellation and failure retain the allowance and reservation conservatively. Global pools are private and cannot be changed by user JWTs. The API defaults to `kind: "chat"`; explicit `kind: "computer"` uses the separate allowance. Future workers must never provide computer tools to chat runs.
+The quota-rebalance migration serializes global allocation and account admission in one transaction. Matching retries return the original run without allocating again. Cancellation and failure retain the allowance and reservation conservatively. Global pools are private and cannot be changed by user JWTs. The API defaults to `kind: "chat"`; explicit `kind: "computer"` uses the separate allowance. If historical computer allocation is already above USD 10, the migration preserves it and freezes further computer reservations instead of erasing history. Future workers must never provide computer tools to chat runs.
 
 These are implemented admission controls, not a provider billing guarantee. The worker must enforce aggregate model, compute and screenshot costs against each reservation before enabling execution. Provider limits, taxes, subscriptions and charges outside this app require separate operator reconciliation. No paid plans or execution have been enabled. The demo remains isolated from these real-account quotas.
 

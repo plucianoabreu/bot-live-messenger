@@ -61,6 +61,8 @@ test('welcome guide and persistent disclosure match actual runtime availability'
 
  const withoutWatch=welcomeDocumentState({live:true,runsEnabled:true,watchAvailable:false});
  assert.match(withoutWatch.disclosure,/conversas e tarefas estão disponíveis/);
+ assert.match(withoutWatch.guide,/até 8 tarefas de chat/);
+ assert.doesNotMatch(withoutWatch.guide,/até 5 tarefas de chat/);
  assert.doesNotMatch(withoutWatch.guide,/Acompanhar|grupo|delega/i);
 
  const withWatch=welcomeDocumentState({live:true,runsEnabled:true,watchAvailable:true});
