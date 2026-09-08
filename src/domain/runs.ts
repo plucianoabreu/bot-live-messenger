@@ -32,7 +32,7 @@ const transitions: Record<RunState, RunState[]> = {
   WAITING_FOR_USER: ['CANCELLED','FAILED'], SUCCEEDED: [], FAILED: [], CANCELLED: [],
 };
 export function canTransition(from: RunState, to: RunState) {return transitions[from].includes(to);}
-export const limits = {welcomeChatMessages:5,welcomeComputerRuns:1,maxSeconds:120,maxTurns:20,maxActions:60,maxCostMicros:250_000,chatCostMicros:20_000,chatPoolMicros:10_000_000,computerPoolMicros:25_000_000,reserveMicros:15_000_000} as const;
+export const limits = {welcomeChatMessages:8,welcomeComputerRuns:1,maxSeconds:120,maxTurns:20,maxActions:60,maxCostMicros:250_000,chatCostMicros:20_000,chatPoolMicros:30_000_000,computerPoolMicros:10_000_000,reserveMicros:10_000_000} as const;
 export function withinBudget(spentMicros: number, nextReservationMicros: number, kind: 'chat' | 'computer' = 'computer') {
   return Number.isSafeInteger(spentMicros) && Number.isSafeInteger(nextReservationMicros) && spentMicros >= 0 && nextReservationMicros >= 0 && spentMicros + nextReservationMicros <= (kind === 'chat' ? limits.chatCostMicros : limits.maxCostMicros);
 }

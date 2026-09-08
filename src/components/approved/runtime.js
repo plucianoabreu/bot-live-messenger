@@ -41,7 +41,7 @@ export function welcomeDocumentState({live=false,runsEnabled=false}={}) {
  const availability=live&&!runsEnabled
   ? '\n\nMODO ATUAL\nAs tarefas reais ainda não estão disponíveis nesta conta. Para testar uma conversa agora, saia e escolha a demonstração local.'
   : live
-   ? '\n\nLIMITES DO PILOTO\nSua conta pode iniciar até 5 tarefas de chat durante este piloto. O saldo restante ainda não aparece nesta tela.'
+   ? '\n\nLIMITES DO PILOTO\nSua conta pode iniciar até 8 tarefas de chat durante este piloto. O saldo restante ainda não aparece nesta tela.'
    : '';
  return {mode:live?'live':'demo',disclosure,guide:`COMO USAR O BOT MESSENGER
 ${availability}

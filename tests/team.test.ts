@@ -59,10 +59,10 @@ test('team profiles are durable, scoped and idempotent; one shared computer; roo
  const two=(await enqueue(original[0].id)).rows[0].id,three=(await enqueue(original[1].id)).rows[0].id;
  await assert.rejects(()=>enqueue(original[2].id),/USER_CONCURRENCY/);
  for(const run of [root,two,three])await db.query('select public.request_cancel($1)',[run]);
- for(let i=2;i<4;i++){const run=(await enqueue(original[i].id)).rows[0].id;await db.query('select public.request_cancel($1)',[run]);}
- await assert.rejects(()=>enqueue(original[4].id),/WELCOME_QUOTA/);
+ for(let i=2;i<7;i++){const run=(await enqueue(original[i].id)).rows[0].id;await db.query('select public.request_cancel($1)',[run]);}
+ await assert.rejects(()=>enqueue(original[7].id),/WELCOME_QUOTA/);
  await db.exec('reset role;');
- assert.equal(Number((await db.query<{allocated_micros:string}>("select allocated_micros from public.pilot_budgets where kind='chat'")).rows[0].allocated_micros),100000);
+ assert.equal(Number((await db.query<{allocated_micros:string}>("select allocated_micros from public.pilot_budgets where kind='chat'")).rows[0].allocated_micros),160000);
  assert.equal((await db.query('select * from public.workspace_computers')).rows.length,2);
  }finally{await db.close();}
 });

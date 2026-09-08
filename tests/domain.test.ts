@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {presence,presets} from '../src/domain/bots';
-import {canTransition,messageInput,withinBudget} from '../src/domain/runs';
+import {canTransition,limits,messageInput,withinBudget} from '../src/domain/runs';
 test('presence follows work before idle computer state',()=>{
  assert.equal(presence('PAUSED','QUEUED'),'busy');
  assert.equal(presence('READY','WAITING_FOR_USER'),'away');
@@ -23,6 +23,13 @@ test('budget reserves before spending and rejects invalid accounting',()=>{
  assert.equal(withinBudget(0,NaN),false);
  assert.equal(withinBudget(19000,1000,'chat'),true);
  assert.equal(withinBudget(19000,1001,'chat'),false);
+});
+test('pilot quota policy prioritizes eight lifetime chats within the fixed USD 50 envelope',()=>{
+ assert.deepEqual(limits,{
+  welcomeChatMessages:8,welcomeComputerRuns:1,maxSeconds:120,maxTurns:20,maxActions:60,
+  maxCostMicros:250_000,chatCostMicros:20_000,chatPoolMicros:30_000_000,
+  computerPoolMicros:10_000_000,reserveMicros:10_000_000,
+ });
 });
 test('message boundary rejects empty, oversized and untrusted ownership fields',()=>{
  const idempotencyKey='11111111-1111-4111-8111-111111111111';
