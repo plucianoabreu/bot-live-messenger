@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { sameOrigin } from '@/server/http';
 import { authConfigured, supabase } from '@/lib/supabase/server';
-import { signupErrorResponse } from '@/domain/auth-errors';
+import { loginErrorResponse, signupErrorResponse } from '@/domain/auth-errors';
 import { configuredAppOrigin } from '@/server/auth/callback';
 const email=z.email().max(254);
 const password=z.string().min(6).max(128);
@@ -26,7 +26,8 @@ export async function POST(request:Request){
  }
  if(body.action==='login'){
   const {error}=await db.auth.signInWithPassword({email:body.email,password:body.password});
-  return Response.json(error?{error:'O e-mail ou a senha não conferem. Confira também a confirmação do seu e-mail.'}:{ok:true},{status:error?401:200});
+  if(error){const mapped=loginErrorResponse(error);return Response.json({error:mapped.message},{status:mapped.status});}
+  return Response.json({ok:true},{status:200});
  }
  if(body.action==='reset'){
   const {data,error:authError}=await db.auth.getUser();if(authError||!data.user)return Response.json({error:'O link expirou. Solicite outro e-mail de recuperação.'},{status:401});
