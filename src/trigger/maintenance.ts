@@ -1,5 +1,6 @@
 import { Sandbox } from '@e2b/desktop';
 import { schedules } from '@trigger.dev/sdk';
+import { cleanupPrewarm } from '../server/execution/prewarm-recovery';
 import { processOneAccountDeletion, supabaseAccountCleanupDependencies } from '../server/account-deletion';
 import { cleanupOneArtifactIntent, cleanupOneExpiredWatch } from '../server/computer/worker-database';
 import {
@@ -13,24 +14,30 @@ export type MaintenanceOperations = {
   cleanupArtifact(): Promise<boolean>;
   cleanupWatch(): Promise<boolean>;
   recoverHermes(): Promise<boolean>;
+  cleanupPrewarm(): Promise<boolean>;
 };
 
 export async function runMaintenance(operations: MaintenanceOperations) {
   // Start every lane through its own promise so synchronous configuration or
   // client construction failures cannot prevent the other lanes from running.
-  const [account, artifact, watch, hermes] = await Promise.allSettled([
+  const [account, artifact, watch, hermes, prewarm] = await Promise.allSettled([
     Promise.resolve().then(() => operations.cleanupAccount()),
     Promise.resolve().then(() => operations.cleanupArtifact()),
     Promise.resolve().then(() => operations.cleanupWatch()),
     Promise.resolve().then(() => operations.recoverHermes()),
+    Promise.resolve().then(() => operations.cleanupPrewarm()),
   ]);
   if (account.status === 'rejected' || artifact.status === 'rejected' ||
-      watch.status === 'rejected' || hermes.status === 'rejected') {
+      watch.status === 'rejected' || hermes.status === 'rejected' || prewarm.status === 'rejected') {
     // Each cleanup class still gets one bounded attempt. Trigger receives no
     // provider or database body that could contain private diagnostics.
     throw new Error('MAINTENANCE_PARTIAL_FAILURE');
   }
-  return { account: account.value, artifact: artifact.value, watch: watch.value, hermes: hermes.value };
+  return { account: account.value, artifact: artifact.value, watch: watch.value, hermes: hermes.value, prewarm: prewarm.value };
+}
+
+async function cleanupOneExpiredPrewarm(env: NodeJS.ProcessEnv): Promise<boolean> {
+  return cleanupPrewarm(env);
 }
 
 function productionMaintenanceOperations(env: NodeJS.ProcessEnv = process.env): MaintenanceOperations {
@@ -60,6 +67,7 @@ function productionMaintenanceOperations(env: NodeJS.ProcessEnv = process.env): 
         async reconcile(claim) { await destroyOrphanHermesSandboxes(e2bApiKey, claim); },
       }));
     },
+    cleanupPrewarm: () => cleanupOneExpiredPrewarm(env),
   };
 }
 

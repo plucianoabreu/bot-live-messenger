@@ -1,4 +1,4 @@
-import { task } from '@trigger.dev/sdk';
+import { task, tasks } from '@trigger.dev/sdk';
 import { z } from 'zod';
 import { workerDatabase } from '../server/execution/database';
 import { executeChat, type ChatMessage } from '../server/execution/chat';
@@ -19,6 +19,15 @@ export const chatTask=task({
   if(!model || !Number.isFinite(inputRate) || inputRate<=0 || !Number.isFinite(outputRate) || outputRate<=0)throw new Error('MODEL_PRICING_NOT_CONFIGURED');
   const db=workerDatabase();
   const hermesEnabled=process.env.HERMES_ENABLED==='true';
+  if(hermesEnabled){
+   const run=await db.from('runs').select('user_id,state,cancel_requested').eq('id',runId).single();
+   if(run.data?.state==='QUEUED'&&!run.data.cancel_requested){
+    const pending=await db.from('prewarm_intents').select('id').eq('user_id',run.data.user_id).is('settled_at',null).neq('state','READY').maybeSingle();
+    // Old schemas are compatible only while admission remains disabled.
+    if(pending.error&&!(pending.error.code==='42P01'&&process.env.PREWARM_ENABLED!=='true'))throw new Error('PREWARM_STATE_UNAVAILABLE');
+    if(pending.data){await tasks.trigger('bot-messenger-chat',{runId},{delay:'10s'});return {deferred:true};}
+   }
+  }
   const {data:r,error}=await db.rpc('claim_chat',{p_run_id:runId});
   if(error)throw new Error('CLAIM_FAILED');
   if(!r)return {skipped:true};

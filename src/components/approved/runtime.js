@@ -292,6 +292,7 @@ function saveDraft() {
   if (state.active) state.drafts[state.active] = $('message-input').value;
 }
 function openConversation(id) {
+  if(options.live)void fetch('/api/prewarm',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({botId:id})}).catch(()=>undefined);
   saveDraft();
   ensureWindow(id);
   if (!state.tabs.includes(id)) state.tabs.push(id);

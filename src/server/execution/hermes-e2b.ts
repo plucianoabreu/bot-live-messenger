@@ -160,6 +160,7 @@ export class HermesE2BFactory implements HermesMachineFactory {
     policy: HermesNetworkPolicy,
     resourceShape: HermesResourceShape,
     private readonly api: HermesE2BApi = defaultApi,
+    private readonly prewarmIntent?: string,
   ) {
     if (!apiKey) throw new Error('E2B_API_KEY_MISSING');
     this.policy = validateHermesNetworkPolicy(policy);
@@ -175,6 +176,7 @@ export class HermesE2BFactory implements HermesMachineFactory {
       metadata: {
         application: 'bot-live-messenger', owner: ownerId, engine: 'hermes',
         networkPolicy: this.policy.version,
+        ...(this.prewarmIntent ? { prewarmIntent: this.prewarmIntent } : {}),
       },
     });
     try {

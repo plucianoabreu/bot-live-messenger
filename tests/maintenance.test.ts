@@ -9,14 +9,16 @@ test('maintenance executes each bounded cleanup operation once', async () => {
     async cleanupArtifact() { events.push('artifact'); return true; },
     async cleanupWatch() { events.push('watch'); return false; },
     async recoverHermes() { events.push('hermes'); return true; },
+    async cleanupPrewarm() { events.push('prewarm'); return false; },
   });
 
-  assert.deepEqual(events, ['account', 'artifact', 'watch', 'hermes']);
+  assert.deepEqual(events, ['account', 'artifact', 'watch', 'hermes', 'prewarm']);
   assert.deepEqual(result, {
     account: { processed: false },
     artifact: true,
     watch: false,
     hermes: true,
+    prewarm: false,
   });
 });
 
@@ -27,6 +29,7 @@ test('maintenance isolates cleanup classes and reports a bounded aggregate failu
     async cleanupArtifact() { events.push('artifact'); return true; },
     async cleanupWatch() { events.push('watch'); return true; },
     async recoverHermes() { events.push('hermes'); return true; },
+    async cleanupPrewarm() { events.push('prewarm'); return true; },
   }), /MAINTENANCE_PARTIAL_FAILURE/);
-  assert.deepEqual(events, ['account', 'artifact', 'watch', 'hermes']);
+  assert.deepEqual(events, ['account', 'artifact', 'watch', 'hermes', 'prewarm']);
 });
