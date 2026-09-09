@@ -5,8 +5,3 @@ export function isHermesTestUserAllowed(env: Record<string, string | undefined>,
   if (!configured) return true;
   return z.uuid().safeParse(configured).success && configured === userId;
 }
-
-export function permitsHermesAdmission(env: Record<string, string | undefined>, userId: string) {
-  if (env.HERMES_ENABLED !== 'true' && env.PREWARM_ENABLED !== 'true') return true;
-  return isHermesTestUserAllowed(env, userId);
-}

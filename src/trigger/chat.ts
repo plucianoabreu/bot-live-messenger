@@ -7,7 +7,6 @@ import { loadChatMemoryContextWhenEnabled } from '../server/execution/memory-con
 import { chatRuntimeEnabled, executeHermes, hermesExecutionMayContinue } from '../server/execution/hermes-executor';
 import { buildBotIdentityInstruction, parseBotIdentitySnapshot, renderUntrustedContent } from '../server/execution/identity-instructions';
 import { createChatLatencyTracker, persistChatLatencyMeasurement } from '../server/execution/chat-latency';
-import { isHermesTestUserAllowed } from '../server/execution/hermes-test-scope';
 
 export const chatTask=task({
  id:'bot-messenger-chat',maxDuration:120,retry:{maxAttempts:1},
@@ -22,7 +21,6 @@ export const chatTask=task({
   const hermesEnabled=process.env.HERMES_ENABLED==='true';
   if(hermesEnabled){
    const run=await db.from('runs').select('user_id,state,cancel_requested').eq('id',runId).single();
-   if(!run.data || !isHermesTestUserAllowed(process.env,run.data.user_id))return {skipped:true};
    if(run.data?.state==='QUEUED'&&!run.data.cancel_requested){
     const pending=await db.from('prewarm_intents').select('id').eq('user_id',run.data.user_id).is('settled_at',null).neq('state','READY').maybeSingle();
     // Old schemas are compatible only while admission remains disabled.

@@ -3,7 +3,6 @@ import type { chatTask } from '@/trigger/chat';
 import { requireUser, sameOrigin } from '@/server/http';
 import { messageInput, parseSequencePage } from '@/domain/runs';
 import { z } from 'zod';
-import { permitsHermesAdmission } from '@/server/execution/hermes-test-scope';
 const noStore={'Cache-Control':'private, no-store, max-age=0'};
 // Production credentials can be introduced without removing the preview/dev binding.
 if(process.env.TRIGGER_PRODUCTION_SECRET_KEY)configure({secretKey:process.env.TRIGGER_PRODUCTION_SECRET_KEY});
@@ -24,7 +23,6 @@ export async function POST(request:Request,{params}:{params:Promise<{id:string}>
  const admissionStartedAt=performance.now();
  if(!sameOrigin(request))return Response.json({error:'Origem inválida.'},{status:403});
  const auth=await requireUser();if(auth.response)return auth.response;
- if(!permitsHermesAdmission(process.env,auth.user.id))return Response.json({error:'A preparação está limitada à conta de teste autorizada.'},{status:503});
  const {id}=await params;if(!z.uuid().safeParse(id).success)return Response.json({error:'Contato inválido.'},{status:400});
  if(process.env.RUNS_ENABLED!=='true')return Response.json({error:'As tarefas ainda não estão disponíveis.'},{status:503});
  // Bound input before parsing to avoid unbounded JSON bodies.

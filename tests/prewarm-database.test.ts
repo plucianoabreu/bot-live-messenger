@@ -2,8 +2,10 @@ import { PGlite } from '@electric-sql/pglite';
 import { readdir, readFile } from 'node:fs/promises';
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { isHermesTestUserAllowed } from '../src/server/execution/hermes-test-scope';
 
 const OWNER = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const OTHER = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 
 async function databaseWithAllMigrations() {
   const db = new PGlite();
@@ -93,5 +95,19 @@ test('flags and client privileges fail closed',async()=>{
  await db.exec('set role authenticated');
  await assert.rejects(claim(db),/permission denied/);
  await assert.rejects(db.query('select * from public.prewarm_intents'),/permission denied/);
+ }finally{await db.close();}
+});
+
+test('test-account prewarm scope leaves another account normal chat executable',async()=>{
+ const db=await databaseWithAllMigrations();try{
+ await enable(db);
+ assert.equal(isHermesTestUserAllowed({HERMES_TEST_USER_ID:OWNER},OWNER),true);
+ assert.equal(isHermesTestUserAllowed({HERMES_TEST_USER_ID:OWNER},OTHER),false);
+ const intent=await claim(db);assert.equal(intent.status,'preparing');
+ await db.exec(`insert into auth.users values('${OTHER}');select set_config('request.jwt.claim.sub','${OTHER}',false);select public.ensure_bots();`);
+ const otherRun=(await db.query<{id:string}>("select public.enqueue_message((select id from public.bots where user_id=$1 limit 1),'normal chat',gen_random_uuid()) id",[OTHER])).rows[0].id;
+ const claimed=(await db.query<{v:{user_id:string;version:number}}>('select public.claim_chat($1) v',[otherRun])).rows[0].v;
+ assert.equal(claimed.user_id,OTHER);assert.equal(claimed.version,1);
+ assert.equal((await db.query<{n:number}>('select count(*)::int n from public.prewarm_intents where user_id=$1',[OTHER])).rows[0].n,0);
  }finally{await db.close();}
 });
