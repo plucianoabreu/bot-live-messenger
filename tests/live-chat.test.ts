@@ -145,6 +145,14 @@ test('local send feedback stays in the transcript rather than the typing indicat
  assert.match(runtime,/Mensagem ainda não confirmada pelo servidor/);
  assert.doesNotMatch(runtime,/Mensagem sendo enviada/);
 });
+test('live nudge preserves local Messenger feedback without adding a fake transcript entry',async()=>{
+ const runtime=await readFile(new URL('../src/components/approved/runtime.js',import.meta.url),'utf8');
+ const nudge=runtime.slice(runtime.indexOf('function nudge()'),runtime.indexOf('let audioContext;'));
+ assert.match(nudge,/if\(options\.live\) \{\s*notify\('Você chamou a atenção do bot\. A tarefa atual continua\.'\);\s*\} else \{/);
+ assert.match(nudge,/classList\.add\('nudging'\)/);
+ assert.match(nudge,/playChime\(\)/);
+ assert.doesNotMatch(nudge,/if\(options\.live\).*return/);
+});
 test('delivery mapping associates runs across bots and preserves orphan artifacts',()=>{
  const messages:WorkspaceMessage[]=[
   {id:'user-a',bot_id:'bot-a',run_id:'run-a',role:'user',content:'A',created_at:'2026-09-07T10:00:00Z'},
