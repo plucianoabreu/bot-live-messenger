@@ -57,3 +57,8 @@ verify the delayed cleanup task and maintenance schedule; then perform an
 explicitly authorized bounded E2B smoke for create-response loss, timeout
 renewal, idle pause and deletion. No publication, migration, provider call or
 paid smoke is authorized by this document. No latency threshold is promised.
+
+For a bounded smoke, `HERMES_TEST_USER_ID` may name exactly one UUID. When it
+is set, the message route, prewarm route and both workers fail closed for every
+other account. It is only a server-side test scope; leave all activation flags
+false by default and use an isolated disposable account for paid validation.

@@ -7,6 +7,7 @@ import { connectHermesE2B, HermesE2BFactory, hermesRuntimeNetworkPolicy } from '
 import { assertHermesComputeReservation, hermesUsageConfiguration } from '../server/billing/hermes-usage';
 import { provisionHermes } from '../server/execution/hermes-provision';
 import { cleanupPrewarm } from '../server/execution/prewarm-recovery';
+import { isHermesTestUserAllowed } from '../server/execution/hermes-test-scope';
 
 export const prewarmCleanupTask=task({id:'bot-messenger-prewarm-cleanup',maxDuration:60,retry:{maxAttempts:1},
  run:async(payload:{intentId:string})=>cleanupPrewarm(process.env,z.uuid().parse(payload.intentId))});
@@ -14,7 +15,9 @@ export const prewarmCleanupTask=task({id:'bot-messenger-prewarm-cleanup',maxDura
 export const prewarmTask=task({id:'bot-messenger-prewarm',maxDuration:150,retry:{maxAttempts:1},
  run:async(payload:{userId:string})=>{
   if(process.env.PREWARM_ENABLED!=='true')return {skipped:true};
-  const userId=z.uuid().parse(payload.userId),db=workerDatabase();
+  const userId=z.uuid().parse(payload.userId);
+  if(!isHermesTestUserAllowed(process.env,userId))return {skipped:true};
+  const db=workerDatabase();
   const key=process.env.E2B_API_KEY,template=process.env.HERMES_TEMPLATE_ID,gateway=process.env.HERMES_MODEL_GATEWAY_URL;
   if(!key||!template||!gateway)return {skipped:true};
   const usage=hermesUsageConfiguration(process.env);
