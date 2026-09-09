@@ -123,9 +123,11 @@ test('optimistic send reconciles exactly once and a retry retains its idempotenc
 });
 test('authoritative refresh retains only unresolved local messages',()=>{
  const pending={id:'optimistic:key',clientId:'optimistic:key',author:'user' as const,text:'Still sending',delivery:'sending' as const};
+ const localNudge={author:'system' as const,text:'Você chamou a atenção de um bot.',delivery:'local' as const};
  const delivered={id:'message-1',author:'user' as const,text:'Saved'};
  assert.deepEqual(mergeLiveTranscript([delivered],[delivered,pending]),[delivered,pending]);
  assert.deepEqual(mergeLiveTranscript([delivered],[{...pending,id:'message-1'}]),[delivered]);
+ assert.deepEqual(mergeLiveTranscript([delivered],[localNudge]),[delivered,localNudge]);
 });
 test('delivered artifacts map to authenticated download links on refresh',async()=>{
  const artifactId='cccccccc-cccc-4ccc-8ccc-cccccccccccc';
@@ -145,13 +147,14 @@ test('local send feedback stays in the transcript rather than the typing indicat
  assert.match(runtime,/Mensagem ainda não confirmada pelo servidor/);
  assert.doesNotMatch(runtime,/Mensagem sendo enviada/);
 });
-test('live nudge preserves local Messenger feedback without adding a fake transcript entry',async()=>{
+test('live nudge records local Messenger feedback in the transcript without a toast',async()=>{
  const runtime=await readFile(new URL('../src/components/approved/runtime.js',import.meta.url),'utf8');
  const nudge=runtime.slice(runtime.indexOf('function nudge()'),runtime.indexOf('let audioContext;'));
- assert.match(nudge,/if\(options\.live\) \{\s*notify\('Você chamou a atenção do bot\. A tarefa atual continua\.'\);\s*\} else \{/);
+ assert.match(nudge,/addMessage\(agent\.id,\{author:'system',text:`Você chamou a atenção de \$\{agent\.name\}/);
+ assert.match(nudge,/delivery:options\.live\?'local':undefined/);
  assert.match(nudge,/classList\.add\('nudging'\)/);
  assert.match(nudge,/playChime\(\)/);
- assert.doesNotMatch(nudge,/if\(options\.live\).*return/);
+ assert.doesNotMatch(nudge,/notify\(/);
 });
 test('delivery mapping associates runs across bots and preserves orphan artifacts',()=>{
  const messages:WorkspaceMessage[]=[
