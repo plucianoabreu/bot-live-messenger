@@ -395,12 +395,8 @@ function stopTask() {
 function nudge() {
   const agent = agentById(state.active);
   if (!agent || agent.status === 'offline') return;
-  if(options.live) {
-    notify('Você chamou a atenção do bot. A tarefa atual continua.');
-  } else {
-  addMessage(agent.id,{author:'system',text:`Você chamou a atenção de ${agent.name}.${state.jobs.has(agent.id) ? ' A tarefa continua em andamento.' : ''}`});
-  if (agent.status === 'away') setAgentStatus(agent.id,'available');
-  }
+  addMessage(agent.id,{author:'system',text:`Você chamou a atenção de ${agent.name}.${state.jobs.has(agent.id) ? ' A tarefa continua em andamento.' : ''}`,delivery:options.live?'local':undefined});
+  if (!options.live && agent.status === 'away') setAgentStatus(agent.id,'available');
   $('conversation-window').classList.remove('nudging');
   void $('conversation-window').offsetWidth;
   $('conversation-window').classList.add('nudging');

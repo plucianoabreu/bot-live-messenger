@@ -38,7 +38,7 @@ export function runFailureFeedbackText(run?:ActivityRun) {
  return '';
 }
 
-export type TranscriptMessage = {id?:string;author:string;text:string;clientId?:string;delivery?:'sending'|'failed'};
+export type TranscriptMessage = {id?:string;author:string;text:string;clientId?:string;delivery?:'sending'|'failed'|'local'};
 export function acceptedMessagesAfterSend<T extends TranscriptMessage>(messages:readonly T[],accepted:{id:string;content:string}) {
  if(messages.some(message=>message.id===accepted.id))return [...messages];
  return [...messages,{id:accepted.id,author:'user' as const,text:accepted.content.trim()}];
